@@ -46,6 +46,7 @@ from .service import ingest, evaluate, expired, prepare_application, run_scan
 from .notifications import availability, test_alert
 from .scheduler import scheduler
 from . import telegram
+from . import assistant
 
 
 @asynccontextmanager
@@ -62,7 +63,7 @@ async def lifespan(app):
         scheduler.shutdown()
 
 
-VERSION = "0.3.2"
+VERSION = "0.3.3"
 app = FastAPI(title=settings.app_name, version=VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -169,6 +170,79 @@ def setup(db=Depends(db_session)):
         "invite_only": settings.invite_only,
         "owner_email_fixed": bool(settings.owner_email),
     }
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=4000)
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage] = Field(min_length=1, max_length=40)
+
+
+@app.post("/api/assistant/chat")
+async def assistant_chat(body: ChatRequest, request: Request, db=Depends(db_session)):
+    """Public platform assistant. Signed-in members get answers tailored to a
+    short, non-sensitive status summary of their workspace."""
+    ip = request.client.host if request.client else "?"
+    try:
+        accounts.throttle("assistant:" + ip, limit=30, window=3600)
+    except ValueError as e:
+        raise HTTPException(429, str(e))
+    status = None
+    user = accounts.session_user(db, request.cookies.get(accounts.SESSION_COOKIE))
+    if user:
+        set_scope(user_snapshot(user))
+        profile = read(db, "profile", {}) or {}
+        status = {
+            "signed in": "yes",
+            "plan": user.plan,
+            "openai key set": "yes" if ai_available() else "no",
+            "verified CV facts": sum(1 for f in profile.get("facts", []) if f.get("verified")),
+            "job sources": len(rows(db, "source")),
+            "searches run": len(rows(db, "run")),
+            "postings in workspace": len(rows(db, "job")),
+            "applications prepared": sum(1 for a in rows(db, "application") if a.data.get("package")),
+            "telegram linked": "yes" if telegram.link_status(db)["linked"] else "no",
+            "scheduled searches": "on" if (read(db, "schedule", {}) or {}).get("enabled") else "off",
+        }
+    try:
+        reply = await run_in_threadpool(assistant.answer, [m.model_dump() for m in body.messages], status)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception:
+        raise HTTPException(502, "The assistant could not answer right now. Please try again in a moment.")
+    return {"reply": reply, "available": assistant.available()}
+
+
+@app.get("/api/assistant/suggestions")
+def assistant_suggestions():
+    return {"questions": assistant.SUGGESTED_QUESTIONS, "available": assistant.available()}
+
+
+_stats_cache = {"at": 0.0, "value": None}
+
+
+@app.get("/api/public/stats")
+def public_stats(db=Depends(db_session)):
+    """Aggregate, anonymous usage numbers for the landing page (cached 10 minutes)."""
+    import time as _time
+
+    if _stats_cache["value"] and _time.time() - _stats_cache["at"] < 600:
+        return _stats_cache["value"]
+    jobs = db.query(Record).filter_by(kind="job").all()
+    apps = db.query(Record).filter_by(kind="application").all()
+    value = {
+        "accounts": db.query(User).count(),
+        "postings_screened": len(jobs),
+        "evaluated": sum(1 for j in jobs if j.data.get("match")),
+        "strong_matches": sum(1 for j in jobs if (j.data.get("match") or {}).get("score", 0) >= 70),
+        "applications_drafted": sum(1 for a in apps if a.data.get("package")),
+        "sources": db.query(Record).filter_by(kind="source").count(),
+    }
+    _stats_cache.update(at=_time.time(), value=value)
+    return value
 
 
 class WaitlistRequest(BaseModel):

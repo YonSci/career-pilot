@@ -26,6 +26,7 @@ import {
   LogOut,
   KeyRound,
   Mail,
+  MessageCircleQuestion,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -435,6 +436,82 @@ function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_
           </section>
         </div>
       </main>
+    </div>
+  );
+}
+function Assistant() {
+  const [open, setOpen] = useState(false),
+    [input, setInput] = useState(""),
+    [busy, setBusy] = useState(false),
+    [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]),
+    [suggestions, setSuggestions] = useState<string[]>([]);
+  useEffect(() => {
+    if (open && !suggestions.length) call<{ questions: string[] }>("/assistant/suggestions").then((r) => setSuggestions(r.questions)).catch(() => {});
+  }, [open, suggestions.length]);
+  const send = async (text: string) => {
+    const q = text.trim();
+    if (!q || busy) return;
+    const next = [...messages, { role: "user" as const, content: q }];
+    setMessages(next);
+    setInput("");
+    setBusy(true);
+    try {
+      const r = await call<{ reply: string }>("/assistant/chat", "POST", { messages: next.slice(-16) });
+      setMessages([...next, { role: "assistant", content: r.reply }]);
+    } catch (e) {
+      setMessages([...next, { role: "assistant", content: e instanceof Error ? e.message : "Something went wrong." }]);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="assistant">
+      {open && (
+        <div className="assistant-panel" role="dialog" aria-label="Help assistant">
+          <div className="assistant-head">
+            <strong>Help assistant</strong>
+            <button className="icon-button" aria-label="Close" onClick={() => setOpen(false)}>
+              <X size={16} />
+            </button>
+          </div>
+          <div className="assistant-body">
+            {messages.length === 0 && (
+              <>
+                <p className="muted-text">Ask how anything works: sources, matching, alerts, applications, your plan.</p>
+                <div className="assistant-chips">
+                  {suggestions.map((q) => (
+                    <button key={q} onClick={() => send(q)}>
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {messages.map((m, i) => (
+              <div key={i} className={"assistant-msg " + m.role}>
+                {m.content}
+              </div>
+            ))}
+            {busy && <div className="assistant-msg assistant muted-text">Thinking…</div>}
+          </div>
+          <form
+            className="assistant-input"
+            onSubmit={(e) => {
+              e.preventDefault();
+              send(input);
+            }}
+          >
+            <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask a question…" maxLength={600} />
+            <button className="button primary" disabled={busy || !input.trim()}>
+              <Send size={15} />
+            </button>
+          </form>
+        </div>
+      )}
+      <button className="assistant-toggle" aria-label="Help" onClick={() => setOpen(!open)}>
+        {open ? <X size={18} /> : <MessageCircleQuestion size={20} />}
+        <span>Help</span>
+      </button>
     </div>
   );
 }
@@ -1788,6 +1865,7 @@ export default function Home() {
           </footer>
         </main>
       </Tabs>
+      <Assistant />
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="wide-dialog">
           <DialogHeader>

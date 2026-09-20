@@ -4,9 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Career Pilot — The right jobs find you. Every match, explained.</title>
-<meta name="description" content="Career Pilot finds relevant jobs from the sources you choose, explains how each one matches your verified CV, alerts you on Telegram, and drafts fact-checked applications only when you ask." />
+<meta name="description" content="Career Pilot watches ReliefWeb, your LinkedIn alerts and employer boards, scores every posting against the verified facts in your CV, alerts you on Telegram, and drafts applications that claim only what you can prove." />
 <meta property="og:title" content="Career Pilot — The right jobs find you. Every match, explained." />
-<meta property="og:description" content="Continuous job discovery, requirement-by-requirement matching against your verified CV, alerts, and fact-checked application drafts. Built for data, climate, geospatial, agriculture and development-sector careers." />
+<meta property="og:description" content="Continuous job discovery, requirement-by-requirement matching against your verified CV, alerts, and evidence-checked application drafts. Built for data, climate, geospatial, agriculture and development-sector careers." />
 <meta property="og:type" content="website" />
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -14,19 +14,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --ink: #13201b;
-    --ink-2: #3b4a44;
-    --muted: #6b7a73;
-    --line: #e3e6e1;
-    --paper: #f7f6f2;
-    --card: #ffffff;
-    --green: #2f5d4a;
-    --green-2: #1f3f33;
-    --green-soft: #e6efe9;
-    --gold: #c89b3c;
-    --gold-soft: #f7efdd;
-    --radius: 18px;
-    --shadow: 0 18px 50px rgba(19, 32, 27, 0.10);
+    --ink: #13201b; --ink-2: #3b4a44; --muted: #6b7a73; --line: #e3e6e1; --paper: #f7f6f2; --card: #ffffff;
+    --green: #2f5d4a; --green-2: #1f3f33; --green-soft: #e6efe9; --gold: #c89b3c; --gold-soft: #f7efdd;
+    --radius: 18px; --shadow: 0 18px 50px rgba(19, 32, 27, 0.10);
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
@@ -40,15 +30,20 @@
   .wrap { width: min(1140px, calc(100% - 40px)); margin: 0 auto; }
   .eyebrow { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green); }
   .lead { color: var(--ink-2); font-size: 1.1rem; max-width: 60ch; }
-  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 999px; font-weight: 600; text-decoration: none; border: 1px solid transparent; cursor: pointer; font-size: 0.95rem; transition: transform .12s ease, box-shadow .12s ease; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; border-radius: 999px; font-weight: 600; text-decoration: none; border: 1px solid transparent; cursor: pointer; font-size: 0.95rem; transition: transform .12s ease, box-shadow .12s ease; font-family: inherit; }
   .btn:hover { transform: translateY(-1px); }
   .btn-primary { background: var(--green); color: #fff; box-shadow: 0 8px 20px rgba(47,93,74,.25); }
   .btn-primary:hover { background: var(--green-2); }
   .btn-ghost { background: transparent; border-color: var(--line); color: var(--ink); }
   .btn-light { background: #fff; color: var(--green-2); }
 
+  /* reveal on scroll */
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
+
   /* nav */
-  .nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); background: rgba(247,246,242,.85); border-bottom: 1px solid var(--line); }
+  .nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); background: rgba(247,246,242,.88); border-bottom: 1px solid var(--line); }
   .nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 68px; }
   .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; font-weight: 700; font-size: 1.05rem; }
   .brand .mark { width: 38px; height: 38px; border-radius: 11px; background: var(--green); display: grid; place-items: center; color: #fff; }
@@ -57,20 +52,33 @@
   .nav-links a { text-decoration: none; color: var(--ink-2); }
   .nav-links a:hover { color: var(--ink); }
   .nav-links .btn-primary, .nav-links .btn-primary:hover { color: #fff; }
-  @media (max-width: 800px) { .nav-links .link { display: none; } }
+  @media (max-width: 800px) { .nav-links .link { display: none; } .nav .wrap { height: auto; padding: 10px 0; flex-wrap: wrap; gap: 10px; } .nav-links { gap: 10px; } .btn { padding: 10px 14px; font-size: 0.88rem; } }
 
   /* hero */
-  .hero { padding: 84px 0 60px; display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; }
-  @media (max-width: 900px) { .hero { grid-template-columns: 1fr; padding-top: 56px; } }
-  .hero .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 30px; }
-  .hero .note { margin-top: 18px; color: var(--muted); font-size: 0.88rem; }
+  .hero { padding: 76px 0 48px; display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; }
+  @media (max-width: 900px) { .hero { grid-template-columns: 1fr; padding-top: 48px; } }
   .badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--gold-soft); color: #7a5a14; font-size: 0.8rem; font-weight: 600; margin-bottom: 22px; }
   .badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); display: inline-block; }
+  .roles { color: var(--green); border-bottom: 3px solid var(--green-soft); white-space: nowrap; }
+  .roles::after { content: "|"; margin-left: 2px; animation: blink 1s steps(1) infinite; color: var(--green); font-weight: 400; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .mini { display: flex; gap: 10px; margin-top: 28px; max-width: 520px; }
+  .mini input { flex: 1; padding: 13px 16px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font: inherit; font-size: 0.95rem; }
+  .msg { font-size: 0.85rem; margin-top: 8px; }
+  .msg.ok { color: var(--green); } .msg.err { color: #9b3b1f; }
+  @media (max-width: 560px) { .mini { flex-direction: column; } }
+  .hero .note { margin-top: 14px; color: var(--muted); font-size: 0.86rem; }
 
-  /* match card illustration */
-  .demo { position: relative; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 22px; }
-  .demo .card + .card { margin-top: 14px; }
+  /* product frame */
+  .frame { background: #fff; border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow); overflow: hidden; }
+  .frame-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: #fbfaf7; }
+  .frame-bar i { width: 10px; height: 10px; border-radius: 50%; background: #e1ddd3; display: inline-block; }
+  .frame-bar .tabs { margin-left: auto; display: flex; gap: 6px; }
+  .frame-bar .tabs button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 5px 11px; font-size: 0.74rem; font-weight: 600; cursor: pointer; color: var(--ink-2); font-family: inherit; }
+  .frame-bar .tabs button.on { background: var(--green); color: #fff; border-color: var(--green); }
+  .frame-body { padding: 20px; min-height: 330px; }
+  .frame-body [data-panel] { display: none; } .frame-body [data-panel].on { display: block; }
+  .frame-note { font-size: 0.72rem; color: var(--muted); padding: 10px 20px; border-top: 1px solid var(--line); background: #fbfaf7; }
   .demo .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
   .demo .company { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
   .demo .title { font-weight: 700; font-size: 1.05rem; margin-top: 2px; }
@@ -80,32 +88,45 @@
   .meta { color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
   .req { display: grid; grid-template-columns: 78px 1fr; gap: 10px; align-items: start; margin-top: 12px; font-size: 0.86rem; }
   .req span { display: inline-block; text-align: center; font-size: 0.66rem; font-weight: 700; letter-spacing: .08em; padding: 4px 6px; border-radius: 7px; }
-  .met { background: #e2f0e7; color: #1f5a3a; }
-  .unknown { background: #f2ecdc; color: #7a5a14; }
+  .met { background: #e2f0e7; color: #1f5a3a; } .unknown { background: #f2ecdc; color: #7a5a14; }
   .req em { font-style: normal; color: var(--muted); display: block; font-size: 0.78rem; }
-  .tg { display: flex; gap: 10px; align-items: center; }
-  .tg .bubble { background: #eef4ff; border-radius: 14px; padding: 12px 14px; font-size: 0.85rem; flex: 1; }
-  .tg .buttons { display: flex; gap: 8px; margin-top: 8px; }
-  .tg .buttons span { padding: 5px 10px; border-radius: 8px; background: #fff; border: 1px solid #d6e0f5; font-size: 0.75rem; font-weight: 600; }
-  .demo .float { position: absolute; right: -12px; top: -18px; background: var(--green); color: #fff; font-size: 0.72rem; font-weight: 700; padding: 6px 10px; border-radius: 999px; box-shadow: var(--shadow); }
-  @media (max-width: 900px) { .demo .float { right: 6px; } }
+  .tg { background: #eef4ff; border-radius: 14px; padding: 14px 16px; font-size: 0.88rem; }
+  .tg .buttons { display: flex; gap: 8px; margin-top: 10px; }
+  .tg .buttons span { padding: 6px 12px; border-radius: 8px; background: #fff; border: 1px solid #d6e0f5; font-size: 0.78rem; font-weight: 600; }
+  .draft h4 { font-family: Fraunces, serif; font-size: 1rem; margin: 0 0 6px; }
+  .draft p { font-size: 0.86rem; color: var(--ink-2); margin-bottom: 10px; }
+  .draft .ev { font-size: 0.7rem; color: var(--green); font-weight: 700; letter-spacing: .06em; }
+  .draft .flag { background: var(--gold-soft); color: #6d4f10; border-radius: 10px; padding: 8px 10px; font-size: 0.8rem; }
 
-  /* strip */
-  .strip { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff; padding: 22px 0; }
-  .strip .wrap { display: flex; gap: 28px; flex-wrap: wrap; align-items: center; justify-content: center; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
-  .strip span { display: inline-flex; align-items: center; gap: 8px; }
+  /* stats */
+  .stats { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff; }
+  .stats .wrap { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; padding: 26px 0; }
+  @media (max-width: 800px) { .stats .wrap { grid-template-columns: repeat(2, 1fr); } }
+  .stat b { display: block; font-family: Fraunces, serif; font-size: 2rem; color: var(--green-2); line-height: 1; }
+  .stat span { font-size: 0.82rem; color: var(--muted); }
+  .stats-caption { text-align: center; font-size: 0.75rem; color: var(--muted); padding-bottom: 14px; }
 
-  section { padding: 84px 0; }
-  .section-head { max-width: 62ch; margin-bottom: 42px; }
+  .strip { padding: 18px 0; }
+  .strip .wrap { display: flex; gap: 22px; flex-wrap: wrap; align-items: center; justify-content: center; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+
+  section { padding: 78px 0; }
+  .section-head { max-width: 62ch; margin-bottom: 38px; }
   .section-head h2 { margin: 10px 0 14px; }
-
   .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
-  @media (max-width: 900px) { .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+  @media (max-width: 900px) { .grid-3 { grid-template-columns: 1fr; } }
   .feature { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; }
-  .feature .icon { width: 42px; height: 42px; border-radius: 12px; background: var(--green-soft); color: var(--green); display: grid; place-items: center; margin-bottom: 16px; }
-  .feature h3 { margin-bottom: 8px; }
-  .feature p { color: var(--ink-2); font-size: 0.95rem; }
+  .feature .icon { width: 42px; height: 42px; border-radius: 12px; background: var(--green-soft); color: var(--green); display: grid; place-items: center; margin-bottom: 16px; font-size: 1.1rem; }
+  .feature h3 { margin-bottom: 8px; } .feature p { color: var(--ink-2); font-size: 0.95rem; }
+
+  /* sectors */
+  .sectors { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  @media (max-width: 1000px) { .sectors { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .sectors { grid-template-columns: 1fr; } }
+  .sector { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+  .sector .glyph { font-size: 1.4rem; margin-bottom: 8px; }
+  .sector h3 { font-size: 1rem; margin-bottom: 6px; }
+  .sector p { font-size: 0.82rem; color: var(--muted); }
+  .sector p b { color: var(--ink-2); font-weight: 600; display: block; margin-top: 6px; }
 
   /* steps */
   .steps { counter-reset: step; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
@@ -113,19 +134,34 @@
   @media (max-width: 560px) { .steps { grid-template-columns: 1fr; } }
   .step { position: relative; padding: 26px 22px 22px; border-radius: var(--radius); background: var(--green-2); color: #fff; }
   .step::before { counter-increment: step; content: counter(step, decimal-leading-zero); font-family: Fraunces, serif; font-size: 2rem; color: rgba(255,255,255,.45); display: block; margin-bottom: 10px; }
-  .step h3 { color: #fff; margin-bottom: 8px; }
-  .step p { color: rgba(255,255,255,.8); font-size: 0.92rem; }
+  .step .time { position: absolute; top: 18px; right: 18px; background: rgba(255,255,255,.14); border-radius: 999px; padding: 4px 10px; font-size: 0.72rem; font-weight: 700; }
+  .step h3 { color: #fff; margin-bottom: 8px; } .step p { color: rgba(255,255,255,.8); font-size: 0.92rem; }
 
   /* trust */
   .trust { background: #fff; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
   .trust ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 28px; }
   @media (max-width: 800px) { .trust ul { grid-template-columns: 1fr; } }
-  .trust li { display: flex; gap: 12px; align-items: flex-start; color: var(--ink-2); }
-  .trust li b { color: var(--ink); }
+  .trust li { display: flex; gap: 12px; align-items: flex-start; color: var(--ink-2); } .trust li b { color: var(--ink); }
   .check { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--green-soft); color: var(--green); display: grid; place-items: center; font-size: 0.75rem; font-weight: 800; margin-top: 2px; }
 
+  /* founder */
+  .founder { display: grid; grid-template-columns: 160px 1fr; gap: 32px; align-items: start; background: #fff; border: 1px solid var(--line); border-radius: 24px; padding: 34px; }
+  @media (max-width: 700px) { .founder { grid-template-columns: 1fr; } }
+  .founder .photo { width: 160px; height: 160px; border-radius: 20px; background: var(--green-2); color: #fff; display: grid; place-items: center; font-family: Fraunces, serif; font-size: 3rem; overflow: hidden; }
+  .founder .photo img { width: 100%; height: 100%; object-fit: cover; }
+  .founder blockquote { margin: 0; font-family: Fraunces, serif; font-size: 1.25rem; line-height: 1.4; color: var(--ink); }
+  .founder p { color: var(--ink-2); margin-top: 14px; }
+  .founder .sig { margin-top: 16px; font-weight: 600; } .founder .sig small { display: block; color: var(--muted); font-weight: 500; }
+
+  /* testimonials (hidden until quotes exist) */
+  .quotes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  @media (max-width: 900px) { .quotes { grid-template-columns: 1fr; } }
+  .quote { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
+  .quote p { font-size: 0.95rem; color: var(--ink-2); } .quote b { display: block; margin-top: 12px; } .quote small { color: var(--muted); }
+
   /* pricing */
-  .pricing-note { display: inline-flex; gap: 10px; align-items: center; padding: 10px 14px; border-radius: 12px; background: var(--gold-soft); color: #6d4f10; font-size: 0.9rem; margin-bottom: 28px; }
+  .offer { display: flex; gap: 12px; align-items: center; padding: 14px 18px; border-radius: 14px; background: var(--gold-soft); color: #6d4f10; font-size: 0.92rem; margin-bottom: 26px; }
+  .offer b { color: #4d3608; }
   .plans { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; align-items: stretch; }
   @media (max-width: 1000px) { .plans { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 560px) { .plans { grid-template-columns: 1fr; } }
@@ -137,37 +173,44 @@
   .plan .price small { font-family: Inter, sans-serif; font-size: 0.85rem; color: var(--muted); font-weight: 500; }
   .plan .for { color: var(--muted); font-size: 0.88rem; min-height: 40px; }
   .plan ul { list-style: none; padding: 0; margin: 18px 0 22px; display: grid; gap: 9px; font-size: 0.9rem; color: var(--ink-2); flex: 1; }
-  .plan li { display: flex; gap: 9px; align-items: flex-start; }
-  .plan li::before { content: "✓"; color: var(--green); font-weight: 800; }
+  .plan li { display: flex; gap: 9px; align-items: flex-start; } .plan li::before { content: "✓"; color: var(--green); font-weight: 800; }
   .addons { margin-top: 22px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
   @media (max-width: 900px) { .addons { grid-template-columns: 1fr; } }
-  .addon { background: var(--green-soft); border-radius: 14px; padding: 18px 20px; font-size: 0.92rem; color: var(--ink-2); }
-  .addon b { display: block; color: var(--ink); margin-bottom: 4px; }
+  .addon { background: var(--green-soft); border-radius: 14px; padding: 18px 20px; font-size: 0.92rem; color: var(--ink-2); } .addon b { display: block; color: var(--ink); margin-bottom: 4px; }
 
-  /* faq */
-  details { border-top: 1px solid var(--line); padding: 18px 0; }
-  details:last-child { border-bottom: 1px solid var(--line); }
+  details { border-top: 1px solid var(--line); padding: 18px 0; } details:last-child { border-bottom: 1px solid var(--line); }
   summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; align-items: center; }
-  summary::after { content: "+"; color: var(--green); font-size: 1.3rem; }
-  details[open] summary::after { content: "–"; }
+  summary::after { content: "+"; color: var(--green); font-size: 1.3rem; } details[open] summary::after { content: "–"; }
   details p { margin-top: 10px; color: var(--ink-2); max-width: 70ch; }
 
-  /* cta */
   .cta { background: var(--green-2); color: #fff; border-radius: 28px; padding: 54px; display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 40px; align-items: center; }
   @media (max-width: 900px) { .cta { grid-template-columns: 1fr; padding: 34px 26px; } }
-  .cta h2 { color: #fff; margin-bottom: 12px; }
-  .cta p { color: rgba(255,255,255,.8); }
+  .cta h2 { color: #fff; margin-bottom: 12px; } .cta p { color: rgba(255,255,255,.8); }
   .form { display: grid; gap: 10px; }
+  .form label { display: grid; gap: 6px; font-size: 0.82rem; font-weight: 600; color: rgba(255,255,255,.85); }
   .form input, .form textarea { width: 100%; padding: 13px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: #fff; font: inherit; font-size: 0.95rem; }
   .form input::placeholder, .form textarea::placeholder { color: rgba(255,255,255,.55); }
-  .form label { display: grid; gap: 6px; font-size: 0.82rem; font-weight: 600; color: rgba(255,255,255,.85); }
-  @media (max-width: 800px) { .nav .wrap { height: auto; padding: 10px 0; flex-wrap: wrap; gap: 10px; } .nav-links { gap: 10px; } .btn { padding: 10px 14px; font-size: 0.88rem; } }
-  .form .ok { color: #cfe8d8; font-size: 0.9rem; }
-  .form .err { color: #ffd2c2; font-size: 0.9rem; }
+  .form .ok { color: #cfe8d8; font-size: 0.9rem; } .form .err { color: #ffd2c2; font-size: 0.9rem; }
 
   footer { padding: 34px 0 44px; color: var(--muted); font-size: 0.86rem; }
   footer .wrap { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
   footer a { color: var(--ink-2); text-decoration: none; margin-left: 18px; }
+
+  /* assistant widget */
+  .cp-assist { position: fixed; right: 20px; bottom: 20px; z-index: 60; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+  .cp-toggle { display: inline-flex; align-items: center; gap: 8px; padding: 12px 18px; border-radius: 999px; border: none; background: var(--green); color: #fff; font-weight: 600; cursor: pointer; box-shadow: 0 10px 30px rgba(19,32,27,.25); font-family: inherit; font-size: 0.92rem; }
+  .cp-panel { width: min(380px, calc(100vw - 40px)); height: min(560px, calc(100vh - 100px)); background: #fff; border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 18px 50px rgba(19,32,27,.18); display: none; flex-direction: column; overflow: hidden; }
+  .cp-panel.open { display: flex; }
+  .cp-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); font-weight: 700; }
+  .cp-head button { border: none; background: none; cursor: pointer; font-size: 1.1rem; color: var(--muted); }
+  .cp-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .cp-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cp-chips button { border: 1px solid var(--line); background: var(--paper); border-radius: 999px; padding: 6px 10px; font-size: .8rem; cursor: pointer; font-family: inherit; }
+  .cp-msg { padding: 10px 12px; border-radius: 12px; font-size: .9rem; line-height: 1.45; white-space: pre-wrap; max-width: 92%; }
+  .cp-msg.user { align-self: flex-end; background: var(--green); color: #fff; } .cp-msg.assistant { align-self: flex-start; background: #f1f3ef; }
+  .cp-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
+  .cp-input input { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); font: inherit; }
+  .cp-input button { border: none; background: var(--green); color: #fff; border-radius: 10px; padding: 0 14px; cursor: pointer; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -192,46 +235,86 @@
 <header class="wrap hero">
   <div>
     <span class="badge"><i></i> Private beta · invitation only · free during the beta</span>
-    <h1>The right jobs find you. Every match, explained.</h1>
-    <p class="lead" style="margin-top:20px">Career Pilot watches ReliefWeb, your LinkedIn alerts and the employer boards you choose, day and night. It scores every posting against the <strong>verified</strong> facts in your CV, tells you exactly why you fit and what is missing, pings you on Telegram, and drafts applications that claim only what you can prove. Made for careers in data, AI, climate, geospatial, agriculture and international development.</p>
-    <div class="actions">
-      <a class="btn btn-primary" href="#invite">Request an invite</a>
-      <a class="btn btn-ghost" href="#how">See how it works</a>
-    </div>
-    <p class="note">Free during the beta with your own OpenAI key · No spam, no automation of employer portals · You stay in control of every application.</p>
+    <h1>The right <span class="roles" id="roles">data science</span><br>jobs find you. Every match, explained.</h1>
+    <p class="lead" style="margin-top:20px">Career Pilot watches ReliefWeb, your LinkedIn alerts and the employer boards you choose, day and night. It scores every posting against the <strong>verified</strong> facts in your CV, tells you exactly why you fit and what is missing, pings you on Telegram, and drafts applications that claim only what you can prove.</p>
+    <form class="mini" id="mini" novalidate>
+      <input type="email" name="email" placeholder="Your email for an invitation" required autocomplete="email" aria-label="Email for an invitation" />
+      <button class="btn btn-primary" type="submit">Request an invite</button>
+    </form>
+    <p class="msg" id="mini-msg" style="display:none"></p>
+    <p class="note">Free during the beta with your own OpenAI key · Invitations go out weekly · You stay in control of every application.</p>
   </div>
-  <div class="demo" aria-label="Example match card">
-    <span class="float">Illustrative example · evaluated against 33 verified facts</span>
-    <div class="card">
-      <div class="top">
-        <div>
-          <div class="company">One Acre Fund · Ethiopia · ReliefWeb</div>
-          <div class="title">MEL Data Automation Officer</div>
+  <div class="frame reveal" aria-label="Product preview">
+    <div class="frame-bar"><i></i><i></i><i></i>
+      <div class="tabs" role="tablist">
+        <button class="on" data-tab="match" role="tab">Match</button>
+        <button data-tab="alert" role="tab">Telegram alert</button>
+        <button data-tab="draft" role="tab">Application draft</button>
+      </div>
+    </div>
+    <div class="frame-body demo">
+      <div data-panel="match" class="on">
+        <div class="top">
+          <div><div class="company">One Acre Fund · Ethiopia · ReliefWeb</div><div class="title">MEL Data Automation Officer</div></div>
+          <div class="score"><b>84</b><small>MATCH</small></div>
         </div>
-        <div class="score"><b>84</b><small>MATCH</small></div>
+        <div class="meta">Strong technical and domain match for data automation: 8+ years of data work, verified R, Python and SQL, dashboard delivery.</div>
+        <div class="req"><span class="met">MET</span><div>Proficiency in R or Stata <em>Evidence F33: verified R proficiency, plus Python and SQL</em></div></div>
+        <div class="req"><span class="met">MET</span><div>Data visualisation skills <em>Evidence F12, F16: dashboards delivered for two programmes</em></div></div>
+        <div class="req"><span class="unknown">UNKNOWN</span><div>Citizenship or permanent residence <em>Mandatory. Not in your evidence, so it is never assumed.</em></div></div>
       </div>
-      <div class="meta">Example output. Strong technical and domain match for data automation: 8+ years of data work, verified R, Python and SQL, dashboard delivery.</div>
-      <div class="req"><span class="met">MET</span><div>Proficiency in R or Stata <em>Evidence F33: verified R proficiency, plus Python and SQL</em></div></div>
-      <div class="req"><span class="met">MET</span><div>Data visualisation skills <em>Evidence F12, F16: dashboards delivered for two programmes</em></div></div>
-      <div class="req"><span class="unknown">UNKNOWN</span><div>Citizenship or permanent residence <em>Mandatory. Not in your evidence, so it is never assumed.</em></div></div>
-    </div>
-    <div class="card tg">
-      <div class="bubble">
-        <strong>New match · 84/100</strong><br>MEL Data Automation Officer · One Acre Fund · Ethiopia<br><span style="color:var(--muted)">Deadline 30 Sep · Gaps: citizenship not documented</span>
-        <div class="buttons"><span>Interested</span><span>Skip</span></div>
+      <div data-panel="alert">
+        <div class="tg">
+          <strong>New match · 84/100</strong><br>MEL Data Automation Officer · One Acre Fund · Ethiopia<br>
+          <span style="color:var(--muted)">Why you fit: 8+ years of data work, verified R, Python, SQL and dashboard delivery.<br>Gaps: citizenship not documented · Deadline 30 Sep</span>
+          <div class="buttons"><span>Interested</span><span>Skip</span></div>
+        </div>
+        <p class="meta" style="margin-top:14px">One tap shortlists the job. Skipped jobs never come back. Digest mode sends one summary per search instead.</p>
+      </div>
+      <div data-panel="draft" class="draft">
+        <h4>Cover letter · paragraph 2</h4>
+        <p>Over eight years I have built data pipelines and dashboards for agricultural and climate programmes, most recently a crop-suitability mapping pipeline for Ethiopia in Python and CropSuite. <span class="ev">EVIDENCE F6, F10, F12</span></p>
+        <h4>Independent review</h4>
+        <div class="flag">Flagged and rewritten: "led a team of twelve" was not supported by your verified facts.</div>
+        <p class="meta" style="margin-top:12px">Export as DOCX and PDF with a checklist of what you still need to supply.</p>
       </div>
     </div>
+    <div class="frame-note">Illustrative example based on a real evaluation, with details simplified.</div>
   </div>
 </header>
 
+<div class="stats reveal">
+  <div class="wrap">
+    <div class="stat"><b data-stat="postings_screened">—</b><span>postings screened</span></div>
+    <div class="stat"><b data-stat="evaluated">—</b><span>evaluated against verified CVs</span></div>
+    <div class="stat"><b data-stat="strong_matches">—</b><span>strong matches found</span></div>
+    <div class="stat"><b data-stat="applications_drafted">—</b><span>applications drafted</span></div>
+  </div>
+  <div class="stats-caption" id="stats-caption">Live totals across the beta, updated every ten minutes.</div>
+</div>
+
 <div class="strip">
   <div class="wrap">
-    <span>Reads from</span>
-    <span>ReliefWeb</span><span>LinkedIn alerts</span><span>Devex &amp; UNjobs alerts</span><span>Greenhouse</span><span>Lever</span><span>Workable</span><span>SmartRecruiters</span><span>Ashby</span><span>Remotive</span><span>Any RSS feed or careers page</span>
+    <span>Reads from</span><span>ReliefWeb</span><span>LinkedIn alerts</span><span>Devex &amp; UNjobs alerts</span><span>Greenhouse</span><span>Lever</span><span>Workable</span><span>SmartRecruiters</span><span>Ashby</span><span>Remotive</span><span>Any RSS feed or careers page</span>
   </div>
 </div>
 
-<section id="features" class="wrap">
+<section id="sectors" class="wrap reveal">
+  <div class="section-head">
+    <span class="eyebrow">Built for your field</span>
+    <h2>Tuned for the roles that rarely show up on generic job apps.</h2>
+    <p class="lead">Sources, suggestions and screening are set up for these sectors, with Africa-based and remote roles in focus.</p>
+  </div>
+  <div class="sectors">
+    <div class="sector"><div class="glyph">🌧</div><h3>Climate &amp; hydrology</h3><p>Seasonal forecasting, early warning, water resources.<b>Hydrologist · Climate risk analyst · EWS specialist</b></p></div>
+    <div class="sector"><div class="glyph">🛰</div><h3>Geospatial &amp; remote sensing</h3><p>Earth observation, mapping, spatial analysis.<b>GIS analyst · Remote sensing scientist · Geospatial lead</b></p></div>
+    <div class="sector"><div class="glyph">📊</div><h3>Data &amp; AI</h3><p>Analytics, machine learning, data engineering.<b>Data scientist · ML engineer · MEL data officer</b></p></div>
+    <div class="sector"><div class="glyph">🌱</div><h3>Agriculture &amp; food systems</h3><p>Digital agriculture, agronomy data, value chains.<b>Agri-data specialist · Research officer · Digital ag lead</b></p></div>
+    <div class="sector"><div class="glyph">🌍</div><h3>Development &amp; humanitarian</h3><p>UN agencies, NGOs, research centres, consultancies.<b>Programme analyst · Consultant · Technical advisor</b></p></div>
+  </div>
+</section>
+
+<section id="features" class="wrap reveal">
   <div class="section-head">
     <span class="eyebrow">What it does</span>
     <h2>Discovery, explanation, alerts and drafting. All grounded in evidence.</h2>
@@ -242,30 +325,29 @@
     <div class="feature"><div class="icon">≡</div><h3>Requirement-level matching</h3><p>Each posting gets a 0 to 100 relevance score plus a table of requirements marked met, unknown or not met, each pointing to the evidence behind it. Unknown is never rounded up to met.</p></div>
     <div class="feature"><div class="icon">✦</div><h3>Why you fit, and what is missing</h3><p>Strengths written in terms of your real projects, and gaps stated plainly, including eligibility criteria such as citizenship or language that your CV does not document.</p></div>
     <div class="feature"><div class="icon">➤</div><h3>Alerts where you are</h3><p>Matches above your threshold land in your inbox and on Telegram, with Interested and Skip buttons. One message per job or one digest per search; you choose.</p></div>
-    <div class="feature"><div class="icon">✎</div><h3>Fact-checked application drafts</h3><p>When you click Prepare application, it drafts a tailored CV, cover letter and screening answers, then an independent review rejects any claim your evidence does not support. Export as DOCX and PDF.</p></div>
-    <div class="feature"><div class="icon">🔒</div><h3>Private by design</h3><p>Your own OpenAI key, encrypted at rest. Your workspace is yours alone. Nothing is submitted and no employer is contacted; every draft is checked against your verified facts and reviewed by you before use.</p></div>
+    <div class="feature"><div class="icon">✎</div><h3>Evidence-checked application drafts</h3><p>When you click Prepare application, it drafts a tailored CV, cover letter and screening answers, then an independent review flags any claim your evidence does not support and rewrites it. Export as DOCX and PDF.</p></div>
+    <div class="feature"><div class="icon">🔒</div><h3>Private by design</h3><p>Your own OpenAI key, encrypted at rest. Your workspace is yours alone. Nothing is submitted and no employer is contacted; you review every draft before use.</p></div>
   </div>
 </section>
 
-<section id="how" class="wrap">
+<section id="how" class="wrap reveal">
   <div class="section-head">
     <span class="eyebrow">How it works</span>
     <h2>From CV to shortlist in an afternoon. Then it runs on its own.</h2>
   </div>
   <div class="steps">
-    <div class="step"><h3>Verify your evidence</h3><p>Upload your CV. Facts are extracted with exact source quotes and you tick the ones that are true. Only verified facts are ever used.</p></div>
-    <div class="step"><h3>Choose your sources</h3><p>Add suggested feeds for your field, employer boards, or a mailbox label where your LinkedIn and Devex alerts arrive.</p></div>
-    <div class="step"><h3>Get explained matches</h3><p>Searches run on your schedule. Strong matches are announced with the reasoning, the gaps and the deadline.</p></div>
-    <div class="step"><h3>Prepare, review, apply</h3><p>Draft an application in minutes, edit it, export it, and submit it yourself through the employer's channel.</p></div>
+    <div class="step"><span class="time">≈ 5 min</span><h3>Verify your evidence</h3><p>Upload your CV. Facts are extracted with exact source quotes and you tick the ones that are true. Only verified facts are ever used.</p></div>
+    <div class="step"><span class="time">≈ 2 min</span><h3>Choose your sources</h3><p>Add suggested feeds for your field, employer boards, or a mailbox label where your LinkedIn and Devex alerts arrive.</p></div>
+    <div class="step"><span class="time">automatic</span><h3>Get explained matches</h3><p>Searches run on your schedule. Strong matches are announced with the reasoning, the gaps and the deadline.</p></div>
+    <div class="step"><span class="time">≈ 3 min</span><h3>Prepare, review, apply</h3><p>Draft an application in minutes, edit it, export it, and submit it yourself through the employer's channel.</p></div>
   </div>
 </section>
 
-<section class="trust">
+<section class="trust reveal">
   <div class="wrap">
     <div class="section-head">
-      <span class="eyebrow">Built for careers in</span>
-      <h2>Data science, AI, climate, geospatial, agriculture and international development.</h2>
-      <p class="lead">Sources and suggestions are tuned for this sector: development agencies, research centres, NGOs and remote-first employers, with Africa-based and remote roles in focus.</p>
+      <span class="eyebrow">What you can count on</span>
+      <h2>Honest by construction.</h2>
     </div>
     <ul>
       <li><span class="check">✓</span><div><b>Evidence-checked drafts.</b> Every career claim must trace to a fact you verified; an independent review flags unsupported sentences for rewriting, and you review the result before use.</div></li>
@@ -276,62 +358,48 @@
   </div>
 </section>
 
-<section id="pricing" class="wrap">
+<section id="founder" class="wrap reveal">
+  <div class="founder">
+    <!-- Replace the initials with a photo: <img src="/founder.jpg" alt="Yonas Mersha" /> -->
+    <div class="photo">YM</div>
+    <div>
+      <blockquote>"I built this because I was tired of scrolling ReliefWeb and LinkedIn every evening, then writing applications from scratch at midnight."</blockquote>
+      <p>I am a data scientist working on climate, hydrology and agriculture in Addis Ababa. The tools I tried were built for software jobs in the US, ignored the boards our sector actually uses, and happily invented experience I did not have. So I built the assistant I wanted: it watches the right sources, explains every match against what my CV can prove, and drafts applications I would be comfortable signing. I use it every day; the numbers above include my own search.</p>
+      <div class="sig">Yonas Mersha<small>Founder · Addis Ababa</small></div>
+    </div>
+  </div>
+</section>
+
+<!-- Testimonials: remove the hidden attribute once the first quotes are in. -->
+<section id="testimonials" class="wrap reveal" hidden>
+  <div class="section-head"><span class="eyebrow">From the beta</span><h2>What members say.</h2></div>
+  <div class="quotes">
+    <div class="quote"><p>"Quote goes here."</p><b>Name</b><small>Role, organisation</small></div>
+    <div class="quote"><p>"Quote goes here."</p><b>Name</b><small>Role, organisation</small></div>
+    <div class="quote"><p>"Quote goes here."</p><b>Name</b><small>Role, organisation</small></div>
+  </div>
+</section>
+
+<section id="pricing" class="wrap reveal">
   <div class="section-head">
     <span class="eyebrow">Pricing</span>
     <h2>Free to start. Pay for depth when it earns its keep.</h2>
-    <p class="lead">The beta is free by invitation: every member gets the Beta plan below with their own OpenAI key. The paid plans are planned for after the beta and beta members keep a founding discount.</p>
+    <p class="lead">The beta is free by invitation: every member gets the Beta plan with their own OpenAI key. The paid plans are planned for after the beta.</p>
   </div>
-  <div class="pricing-note">◆ Regional pricing applies: about 40 to 50 percent lower for members in Africa and South Asia.</div>
+  <div class="offer">◆ <span><b>Founding-member offer:</b> everyone who joins during the beta keeps Pro at 5 USD a month for the first year. Regional pricing about 40 to 50 percent lower in Africa and South Asia.</span></div>
   <div class="plans">
-    <div class="plan">
-      <div class="name">Free</div>
-      <div class="price">$0<small> / month</small></div>
-      <div class="for">Feel the value before paying anything.</div>
-      <ul>
-        <li>Manual jobs and 2 sources</li>
-        <li>10 AI evaluations per search, run by hand</li>
-        <li>1 application package a month</li>
-        <li>In-app inbox and verified evidence bank</li>
-      </ul>
-      <a class="btn btn-ghost" href="#invite">Request an invite</a>
-    </div>
-    <div class="plan hot">
-      <div class="name">Pro</div>
-      <div class="price">$9<small> / month · $79 / year</small></div>
-      <div class="for">Continuous search with alerts and drafting.</div>
-      <ul>
-        <li>Up to 50 sources, including email alerts</li>
-        <li>50 evaluations per scheduled search</li>
-        <li>Telegram and email alerts</li>
-        <li>8 evidence-checked application packages a month</li>
-      </ul>
-      <a class="btn btn-primary" href="#invite">Request an invite</a>
-    </div>
-    <div class="plan">
-      <div class="name">Pro Plus</div>
-      <div class="price">$19<small> / month</small></div>
-      <div class="for">For an active search across many roles.</div>
-      <ul>
-        <li>Everything in Pro</li>
-        <li>30 application packages a month</li>
-        <li>Digest mode and priority processing</li>
-        <li>Application history and exports</li>
-      </ul>
-      <a class="btn btn-ghost" href="#invite">Request an invite</a>
-    </div>
-    <div class="plan">
-      <div class="name">Bring your own key</div>
-      <div class="price">$4<small> / month · free in the beta</small></div>
-      <div class="for">Use your own OpenAI key; pay only for the platform.</div>
-      <ul>
-        <li>Everything in Pro Plus</li>
-        <li>AI usage billed by OpenAI to you</li>
-        <li>Full control of models and spend</li>
-        <li>What every beta member has today</li>
-      </ul>
-      <a class="btn btn-ghost" href="#invite">Request an invite</a>
-    </div>
+    <div class="plan"><div class="name">Free</div><div class="price">$0<small> / month</small></div><div class="for">Feel the value before paying anything.</div>
+      <ul><li>Manual jobs and 2 sources</li><li>10 AI evaluations per search, run by hand</li><li>1 application package a month</li><li>In-app inbox and verified evidence bank</li></ul>
+      <a class="btn btn-ghost" href="#invite">Request an invite</a></div>
+    <div class="plan hot"><div class="name">Pro</div><div class="price">$9<small> / month · $79 / year</small></div><div class="for">Continuous search with alerts and drafting.</div>
+      <ul><li>Up to 50 sources, including email alerts</li><li>50 evaluations per scheduled search</li><li>Telegram and email alerts</li><li>8 evidence-checked application packages a month</li></ul>
+      <a class="btn btn-primary" href="#invite">Request an invite</a></div>
+    <div class="plan"><div class="name">Pro Plus</div><div class="price">$19<small> / month</small></div><div class="for">For an active search across many roles.</div>
+      <ul><li>Everything in Pro</li><li>30 application packages a month</li><li>Digest mode and priority processing</li><li>Application history and exports</li></ul>
+      <a class="btn btn-ghost" href="#invite">Request an invite</a></div>
+    <div class="plan"><div class="name">Bring your own key</div><div class="price">$4<small> / month · free in the beta</small></div><div class="for">Use your own OpenAI key; pay only for the platform.</div>
+      <ul><li>Everything in Pro Plus</li><li>AI usage billed by OpenAI to you</li><li>Full control of models and spend</li><li>What every beta member has today</li></ul>
+      <a class="btn btn-ghost" href="#invite">Request an invite</a></div>
   </div>
   <div class="addons">
     <div class="addon"><b>Extra application packages</b>$2 each, or 5 for $8. A tailored, reviewed application the night before a deadline.</div>
@@ -340,24 +408,22 @@
   </div>
 </section>
 
-<section id="faq" class="wrap">
-  <div class="section-head">
-    <span class="eyebrow">Questions</span>
-    <h2>Straight answers.</h2>
-  </div>
+<section id="faq" class="wrap reveal">
+  <div class="section-head"><span class="eyebrow">Questions</span><h2>Straight answers.</h2></div>
   <details open><summary>Does it apply to jobs for me?</summary><p>No, and it never will. It prepares documents you review and export; you submit them through the employer's official channel. Automation of application portals is deliberately out of scope.</p></details>
   <details><summary>Where do the postings come from?</summary><p>From sources you enable: ReliefWeb, employer boards on Greenhouse, Lever, Workable, SmartRecruiters and Ashby, Remotive, any RSS feed or public careers page, and job-alert emails from LinkedIn, Devex, UNjobs, Impactpool or ReliefWeb that you route to a mailbox label. LinkedIn itself is never scraped.</p></details>
-  <details><summary>What does "bring your own key" mean?</summary><p>You paste an OpenAI API key in your account. Evaluations and drafts run on it, so you pay OpenAI directly, typically 1 to 3 dollars for a search of 50 postings. The key is stored encrypted and can be removed at any time.</p></details>
+  <details><summary>What does a search cost me in OpenAI usage?</summary><p>You paste an OpenAI API key in your account and pay OpenAI directly. A search that evaluates 50 new postings typically costs 1 to 3 US dollars; later searches cost less because stored postings are not re-evaluated. Drafting one application is usually under a dollar. You can cap evaluations per search and remove the key at any time.</p></details>
+  <details><summary>Which countries and languages does it cover?</summary><p>Any country: sources are global and you set your preferred locations, from "Ethiopia" to "Remote" to "Africa". Postings in English are matched best; other languages work when the posting and your CV facts share a language. The assistant and dashboard are in English.</p></details>
   <details><summary>Is the match score a hiring probability?</summary><p>No. It is a relevance score between the posting's requirements and your verified facts. Mandatory eligibility is tracked separately and shown as met, unknown or not met.</p></details>
   <details><summary>What happens to my data?</summary><p>Your CV text, verified facts, postings, evaluations and drafts stay in your private workspace. The owner of the service sees only account-level activity to improve the beta. You can remove connections at any time and ask for full deletion. See the <a href="/privacy.html">privacy notice</a>.</p></details>
 </section>
 
-<section class="wrap" id="invite">
+<section class="wrap reveal" id="invite">
   <div class="cta">
     <div>
       <span class="eyebrow" style="color:#bfd8c9">Private beta</span>
       <h2>Request an invitation.</h2>
-      <p>We are onboarding a small cohort of professionals in data, climate, geospatial, agriculture and development roles. Tell us a line about your field and we will send an invitation code.</p>
+      <p>We are onboarding a small cohort of professionals in data, climate, geospatial, agriculture and development roles. Tell us a line about your field and we will send an invitation code. Invitations go out weekly.</p>
     </div>
     <form class="form" id="waitlist" novalidate>
       <label>Your name<input type="text" name="name" placeholder="e.g. Amina Bekele" autocomplete="name" /></label>
@@ -378,23 +444,98 @@
   </div>
 </footer>
 
+<div class="cp-assist">
+  <div class="cp-panel" id="cp-panel" role="dialog" aria-label="Ask about Career Pilot">
+    <div class="cp-head"><span>Ask about Career Pilot</span><button id="cp-close" aria-label="Close">✕</button></div>
+    <div class="cp-body" id="cp-body">
+      <p style="font-size:.9rem;color:var(--muted)">Ask how anything works: sources, matching, alerts, applications, pricing, privacy.</p>
+      <div class="cp-chips" id="cp-chips"></div>
+    </div>
+    <form class="cp-input" id="cp-form"><input id="cp-text" placeholder="Ask a question…" maxlength="600" autocomplete="off" /><button type="submit">Send</button></form>
+  </div>
+  <button class="cp-toggle" id="cp-toggle" aria-label="Open the assistant">💬 Ask a question</button>
+</div>
+
 <script>
   document.getElementById("year").textContent = new Date().getFullYear();
+  const H = { "Content-Type": "application/json", "X-Requested-With": "CareerPilot" };
+
+  // Reveal on scroll
+  const io = new IntersectionObserver((entries) => entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { threshold: 0.12 });
+  document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+
+  // Rotating roles in the headline
+  const roles = ["data science", "GIS", "hydrology", "climate risk", "MEL data", "remote sensing", "digital agriculture", "machine learning"];
+  const rolesEl = document.getElementById("roles");
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!reduced) {
+    let i = 0;
+    const type = (word, cb) => { let k = 0; rolesEl.textContent = ""; const t = setInterval(() => { rolesEl.textContent = word.slice(0, ++k); if (k >= word.length) { clearInterval(t); cb(); } }, 55); };
+    const erase = (cb) => { const t = setInterval(() => { rolesEl.textContent = rolesEl.textContent.slice(0, -1); if (!rolesEl.textContent) { clearInterval(t); cb(); } }, 30); };
+    const cycle = () => setTimeout(() => erase(() => { i = (i + 1) % roles.length; type(roles[i], cycle); }), 2200);
+    cycle();
+  }
+
+  // Live totals
+  fetch("/api/public/stats").then((r) => r.json()).then((s) => {
+    document.querySelectorAll("[data-stat]").forEach((el) => { const v = s[el.dataset.stat]; el.textContent = typeof v === "number" ? v.toLocaleString() : "—"; });
+  }).catch(() => { document.getElementById("stats-caption").textContent = "Totals are updated as the beta runs."; });
+
+  // Tabs in the product frame
+  document.querySelectorAll(".frame-bar .tabs button").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll(".frame-bar .tabs button").forEach((x) => x.classList.toggle("on", x === b));
+    document.querySelectorAll(".frame-body [data-panel]").forEach((p) => p.classList.toggle("on", p.dataset.panel === b.dataset.tab));
+  }));
+
+  // Invitation forms
+  const submitInvite = async (data) => {
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email || "")) throw new Error("Enter a valid email address.");
+    const r = await fetch("/api/waitlist", { method: "POST", headers: H, body: JSON.stringify(data) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.detail || "Something went wrong."); }
+  };
+  const mini = document.getElementById("mini"), miniMsg = document.getElementById("mini-msg");
+  mini.addEventListener("submit", async (e) => {
+    e.preventDefault(); miniMsg.style.display = "block"; miniMsg.className = "msg";
+    try { await submitInvite(Object.fromEntries(new FormData(mini).entries())); mini.reset(); miniMsg.classList.add("ok"); miniMsg.textContent = "Thank you. Your request is in; invitations go out weekly."; }
+    catch (ex) { miniMsg.classList.add("err"); miniMsg.textContent = ex.message; }
+  });
   const form = document.getElementById("waitlist");
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const ok = document.getElementById("ok"), err = document.getElementById("err");
-    ok.hidden = true; err.hidden = true;
-    const data = Object.fromEntries(new FormData(form).entries());
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email || "")) { err.textContent = "Enter a valid email address."; err.hidden = false; return; }
+    const ok = document.getElementById("ok"), err = document.getElementById("err"); ok.hidden = true; err.hidden = true;
     const button = form.querySelector("button"); button.disabled = true;
-    try {
-      const r = await fetch("/api/waitlist", { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "CareerPilot" }, body: JSON.stringify(data) });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.detail || "Something went wrong."); }
-      form.reset(); ok.hidden = false;
-    } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+    try { await submitInvite(Object.fromEntries(new FormData(form).entries())); form.reset(); ok.hidden = false; }
+    catch (ex) { err.textContent = ex.message; err.hidden = false; }
     finally { button.disabled = false; }
   });
+
+  // Assistant
+  const panel = document.getElementById("cp-panel"), body = document.getElementById("cp-body"), chips = document.getElementById("cp-chips"), text = document.getElementById("cp-text");
+  const history = [];
+  let busy = false;
+  const add = (role, content) => { const d = document.createElement("div"); d.className = "cp-msg " + role; d.textContent = content; body.appendChild(d); body.scrollTop = body.scrollHeight; return d; };
+  const ask = async (q) => {
+    q = (q || "").trim(); if (!q || busy) return;
+    chips.remove();
+    history.push({ role: "user", content: q }); add("user", q); text.value = ""; busy = true;
+    const thinking = add("assistant", "Thinking…");
+    try {
+      const r = await fetch("/api/assistant/chat", { method: "POST", headers: H, body: JSON.stringify({ messages: history.slice(-16) }) });
+      const j = await r.json();
+      const reply = r.ok ? j.reply : (j.detail || "The assistant could not answer right now.");
+      thinking.textContent = reply; history.push({ role: "assistant", content: reply });
+    } catch { thinking.textContent = "The assistant could not answer right now."; }
+    finally { busy = false; body.scrollTop = body.scrollHeight; }
+  };
+  document.getElementById("cp-toggle").addEventListener("click", () => {
+    panel.classList.toggle("open");
+    if (panel.classList.contains("open") && !chips.childElementCount && chips.isConnected) {
+      fetch("/api/assistant/suggestions").then((r) => r.json()).then((s) => (s.questions || []).forEach((q) => { const b = document.createElement("button"); b.type = "button"; b.textContent = q; b.addEventListener("click", () => ask(q)); chips.appendChild(b); })).catch(() => {});
+      text.focus();
+    }
+  });
+  document.getElementById("cp-close").addEventListener("click", () => panel.classList.remove("open"));
+  document.getElementById("cp-form").addEventListener("submit", (e) => { e.preventDefault(); ask(text.value); });
 </script>
 </body>
 </html>
