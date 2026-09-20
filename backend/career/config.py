@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     # Unshortlisted jobs unseen in any feed for this long are archived.
     archive_after_days: int = 45
     dashboard_dir: Path = Path("dashboard")
+    # Public marketing page served at /; the app lives under /app.
+    landing_dir: Path = Path("landing")
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     telegram_webhook_secret: str = ""

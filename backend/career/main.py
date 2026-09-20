@@ -170,6 +170,23 @@ def setup(db=Depends(db_session)):
     }
 
 
+class WaitlistRequest(BaseModel):
+    email: str = Field(max_length=320)
+    name: str = Field(default="", max_length=200)
+    note: str = Field(default="", max_length=500)
+
+
+@app.post("/api/waitlist")
+def waitlist(body: WaitlistRequest, request: Request, db=Depends(db_session)):
+    """Public: invitation requests from the landing page."""
+    try:
+        accounts.throttle("waitlist:" + (request.client.host if request.client else "?"), limit=5, window=3600)
+        accounts.add_waitlist(db, body.email, body.name, body.note)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"ok": True}
+
+
 class Credentials(BaseModel):
     email: str = Field(max_length=320)
     password: str = Field(max_length=200)
@@ -311,6 +328,7 @@ def admin_overview(_: User = Depends(admin), db=Depends(db_session)):
     return {
         "users": metrics,
         "invites": accounts.list_invites(db),
+        "waitlist": accounts.list_waitlist(db),
         "totals": {
             "users": len(users),
             "activated": sum(1 for m in metrics if m["activated"]),
@@ -742,5 +760,8 @@ async def telegram_webhook(request: Request, db=Depends(db_session)):
     return {"ok": True}
 
 
+# The app lives under /app; the public landing page (and legal pages) at /.
 if settings.dashboard_dir.is_dir():
-    app.mount("/", StaticFiles(directory=settings.dashboard_dir, html=True), name="dashboard")
+    app.mount("/app", StaticFiles(directory=settings.dashboard_dir, html=True), name="dashboard")
+if settings.landing_dir.is_dir():
+    app.mount("/", StaticFiles(directory=settings.landing_dir, html=True), name="landing")

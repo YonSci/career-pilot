@@ -28,7 +28,7 @@ notepad .env                                   # add OPENAI_API_KEY and any of t
 .\run.ps1                                      # starts API + dashboard + scheduler on http://127.0.0.1:8000
 ```
 
-Open http://127.0.0.1:8000 and create the first account. It becomes the owner, and any data created before accounts existed is attached to it. The owner account uses the server's `OPENAI_API_KEY`; other accounts add their own key under **Account**.
+Open http://127.0.0.1:8000/app/ and create the first account (the root URL serves the public landing page from `landing/`). It becomes the owner, and any data created before accounts existed is attached to it. The owner account uses the server's `OPENAI_API_KEY`; other accounts add their own key under **Account**.
 
 To keep it running in the background and start at logon:
 

@@ -13,9 +13,10 @@ WORKDIR /app
 COPY backend/requirements.lock .
 RUN pip install --no-cache-dir -r requirements.lock
 COPY backend/career ./career
+COPY landing ./landing
 COPY --from=dashboard /src/dist/dashboard ./dashboard
 RUN useradd --uid 10001 --create-home career && mkdir -p /app/data && chown -R career:career /app/data
 USER career
-ENV PYTHONUNBUFFERED=1 DASHBOARD_DIR=/app/dashboard
+ENV PYTHONUNBUFFERED=1 DASHBOARD_DIR=/app/dashboard LANDING_DIR=/app/landing
 EXPOSE 8000
 CMD ["uvicorn","career.main:app","--host","0.0.0.0","--port","8000"]

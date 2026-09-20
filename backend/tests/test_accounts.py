@@ -161,3 +161,16 @@ def test_scheduler_walks_due_accounts(client, monkeypatch):
     assert len(ran) == 1
     assert member.get("/api/state").json()["runs"][0]["trigger"] == "scheduled"
     assert client.get("/api/state").json()["runs"] == []
+
+
+def test_waitlist_is_public_and_visible_to_owner(client):
+    from fastapi.testclient import TestClient
+    from career.main import app
+
+    anon = TestClient(app)
+    assert anon.post("/api/waitlist", json={"email": "not-an-email"}).status_code == 422
+    assert anon.post("/api/waitlist", json={"email": "Lead@Example.org", "name": "Lead", "note": "GIS analyst"}).status_code == 200
+    assert anon.post("/api/waitlist", json={"email": "lead@example.org", "note": "updated"}).status_code == 200
+    overview = client.get("/api/admin/overview").json()
+    assert [w["email"] for w in overview["waitlist"]] == ["lead@example.org"]
+    assert overview["waitlist"][0]["note"] == "updated" and overview["waitlist"][0]["name"] == "Lead"

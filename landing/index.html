@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Career Pilot — Your evidence-grounded job search assistant</title>
+<meta name="description" content="Career Pilot finds relevant jobs from the sources you choose, explains how each one matches your verified CV, alerts you on Telegram, and drafts fact-checked applications only when you ask." />
+<meta property="og:title" content="Career Pilot — Your evidence-grounded job search assistant" />
+<meta property="og:description" content="Continuous job discovery, requirement-by-requirement matching against your verified CV, alerts, and fact-checked application drafts. Built for data, climate, geospatial, agriculture and development-sector careers." />
+<meta property="og:type" content="website" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #13201b;
+    --ink-2: #3b4a44;
+    --muted: #6b7a73;
+    --line: #e3e6e1;
+    --paper: #f7f6f2;
+    --card: #ffffff;
+    --green: #2f5d4a;
+    --green-2: #1f3f33;
+    --green-soft: #e6efe9;
+    --gold: #c89b3c;
+    --gold-soft: #f7efdd;
+    --radius: 18px;
+    --shadow: 0 18px 50px rgba(19, 32, 27, 0.10);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: var(--paper); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3 { font-family: Fraunces, Georgia, serif; font-weight: 600; letter-spacing: -0.01em; line-height: 1.12; margin: 0; }
+  h1 { font-size: clamp(2.3rem, 5vw, 3.8rem); }
+  h2 { font-size: clamp(1.7rem, 3vw, 2.4rem); }
+  h3 { font-size: 1.15rem; }
+  p { margin: 0; }
+  a { color: inherit; }
+  .wrap { width: min(1140px, calc(100% - 40px)); margin: 0 auto; }
+  .eyebrow { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green); }
+  .lead { color: var(--ink-2); font-size: 1.1rem; max-width: 60ch; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 999px; font-weight: 600; text-decoration: none; border: 1px solid transparent; cursor: pointer; font-size: 0.95rem; transition: transform .12s ease, box-shadow .12s ease; }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary { background: var(--green); color: #fff; box-shadow: 0 8px 20px rgba(47,93,74,.25); }
+  .btn-primary:hover { background: var(--green-2); }
+  .btn-ghost { background: transparent; border-color: var(--line); color: var(--ink); }
+  .btn-light { background: #fff; color: var(--green-2); }
+
+  /* nav */
+  .nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); background: rgba(247,246,242,.85); border-bottom: 1px solid var(--line); }
+  .nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 68px; }
+  .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; font-weight: 700; font-size: 1.05rem; }
+  .brand .mark { width: 38px; height: 38px; border-radius: 11px; background: var(--green); display: grid; place-items: center; color: #fff; }
+  .brand small { display: block; font-size: 0.62rem; letter-spacing: 0.16em; color: var(--muted); font-weight: 600; }
+  .nav-links { display: flex; gap: 26px; align-items: center; font-size: 0.93rem; font-weight: 500; }
+  .nav-links a { text-decoration: none; color: var(--ink-2); }
+  .nav-links a:hover { color: var(--ink); }
+  @media (max-width: 800px) { .nav-links .link { display: none; } }
+
+  /* hero */
+  .hero { padding: 84px 0 60px; display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; }
+  @media (max-width: 900px) { .hero { grid-template-columns: 1fr; padding-top: 56px; } }
+  .hero .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 30px; }
+  .hero .note { margin-top: 18px; color: var(--muted); font-size: 0.88rem; }
+  .badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--gold-soft); color: #7a5a14; font-size: 0.8rem; font-weight: 600; margin-bottom: 22px; }
+  .badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); display: inline-block; }
+
+  /* match card illustration */
+  .demo { position: relative; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 22px; }
+  .demo .card + .card { margin-top: 14px; }
+  .demo .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+  .demo .company { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+  .demo .title { font-weight: 700; font-size: 1.05rem; margin-top: 2px; }
+  .score { min-width: 64px; text-align: center; border-radius: 12px; padding: 8px 6px; background: var(--green-soft); color: var(--green-2); }
+  .score b { display: block; font-size: 1.5rem; line-height: 1; }
+  .score small { font-size: 0.6rem; letter-spacing: 0.12em; font-weight: 700; }
+  .meta { color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
+  .req { display: grid; grid-template-columns: 78px 1fr; gap: 10px; align-items: start; margin-top: 12px; font-size: 0.86rem; }
+  .req span { display: inline-block; text-align: center; font-size: 0.66rem; font-weight: 700; letter-spacing: .08em; padding: 4px 6px; border-radius: 7px; }
+  .met { background: #e2f0e7; color: #1f5a3a; }
+  .unknown { background: #f2ecdc; color: #7a5a14; }
+  .req em { font-style: normal; color: var(--muted); display: block; font-size: 0.78rem; }
+  .tg { display: flex; gap: 10px; align-items: center; }
+  .tg .bubble { background: #eef4ff; border-radius: 14px; padding: 12px 14px; font-size: 0.85rem; flex: 1; }
+  .tg .buttons { display: flex; gap: 8px; margin-top: 8px; }
+  .tg .buttons span { padding: 5px 10px; border-radius: 8px; background: #fff; border: 1px solid #d6e0f5; font-size: 0.75rem; font-weight: 600; }
+  .demo .float { position: absolute; right: -12px; top: -18px; background: var(--green); color: #fff; font-size: 0.72rem; font-weight: 700; padding: 6px 10px; border-radius: 999px; box-shadow: var(--shadow); }
+  @media (max-width: 900px) { .demo .float { right: 6px; } }
+
+  /* strip */
+  .strip { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff; padding: 22px 0; }
+  .strip .wrap { display: flex; gap: 28px; flex-wrap: wrap; align-items: center; justify-content: center; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+  .strip span { display: inline-flex; align-items: center; gap: 8px; }
+
+  section { padding: 84px 0; }
+  .section-head { max-width: 62ch; margin-bottom: 42px; }
+  .section-head h2 { margin: 10px 0 14px; }
+
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+  @media (max-width: 900px) { .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+  .feature { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; }
+  .feature .icon { width: 42px; height: 42px; border-radius: 12px; background: var(--green-soft); color: var(--green); display: grid; place-items: center; margin-bottom: 16px; }
+  .feature h3 { margin-bottom: 8px; }
+  .feature p { color: var(--ink-2); font-size: 0.95rem; }
+
+  /* steps */
+  .steps { counter-reset: step; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+  @media (max-width: 900px) { .steps { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .steps { grid-template-columns: 1fr; } }
+  .step { position: relative; padding: 26px 22px 22px; border-radius: var(--radius); background: var(--green-2); color: #fff; }
+  .step::before { counter-increment: step; content: counter(step, decimal-leading-zero); font-family: Fraunces, serif; font-size: 2rem; color: rgba(255,255,255,.45); display: block; margin-bottom: 10px; }
+  .step h3 { color: #fff; margin-bottom: 8px; }
+  .step p { color: rgba(255,255,255,.8); font-size: 0.92rem; }
+
+  /* trust */
+  .trust { background: #fff; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .trust ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 28px; }
+  @media (max-width: 800px) { .trust ul { grid-template-columns: 1fr; } }
+  .trust li { display: flex; gap: 12px; align-items: flex-start; color: var(--ink-2); }
+  .trust li b { color: var(--ink); }
+  .check { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--green-soft); color: var(--green); display: grid; place-items: center; font-size: 0.75rem; font-weight: 800; margin-top: 2px; }
+
+  /* pricing */
+  .pricing-note { display: inline-flex; gap: 10px; align-items: center; padding: 10px 14px; border-radius: 12px; background: var(--gold-soft); color: #6d4f10; font-size: 0.9rem; margin-bottom: 28px; }
+  .plans { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; align-items: stretch; }
+  @media (max-width: 1000px) { .plans { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .plans { grid-template-columns: 1fr; } }
+  .plan { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; display: flex; flex-direction: column; }
+  .plan.hot { border-color: var(--green); box-shadow: var(--shadow); position: relative; }
+  .plan.hot::after { content: "Most popular"; position: absolute; top: -12px; left: 22px; background: var(--green); color: #fff; font-size: 0.7rem; font-weight: 700; letter-spacing: .08em; padding: 4px 10px; border-radius: 999px; }
+  .plan .name { font-weight: 700; font-size: 1.05rem; }
+  .plan .price { font-family: Fraunces, serif; font-size: 2.3rem; margin: 10px 0 2px; }
+  .plan .price small { font-family: Inter, sans-serif; font-size: 0.85rem; color: var(--muted); font-weight: 500; }
+  .plan .for { color: var(--muted); font-size: 0.88rem; min-height: 40px; }
+  .plan ul { list-style: none; padding: 0; margin: 18px 0 22px; display: grid; gap: 9px; font-size: 0.9rem; color: var(--ink-2); flex: 1; }
+  .plan li { display: flex; gap: 9px; align-items: flex-start; }
+  .plan li::before { content: "✓"; color: var(--green); font-weight: 800; }
+  .addons { margin-top: 22px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  @media (max-width: 900px) { .addons { grid-template-columns: 1fr; } }
+  .addon { background: var(--green-soft); border-radius: 14px; padding: 18px 20px; font-size: 0.92rem; color: var(--ink-2); }
+  .addon b { display: block; color: var(--ink); margin-bottom: 4px; }
+
+  /* faq */
+  details { border-top: 1px solid var(--line); padding: 18px 0; }
+  details:last-child { border-bottom: 1px solid var(--line); }
+  summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+  summary::after { content: "+"; color: var(--green); font-size: 1.3rem; }
+  details[open] summary::after { content: "–"; }
+  details p { margin-top: 10px; color: var(--ink-2); max-width: 70ch; }
+
+  /* cta */
+  .cta { background: var(--green-2); color: #fff; border-radius: 28px; padding: 54px; display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 40px; align-items: center; }
+  @media (max-width: 900px) { .cta { grid-template-columns: 1fr; padding: 34px 26px; } }
+  .cta h2 { color: #fff; margin-bottom: 12px; }
+  .cta p { color: rgba(255,255,255,.8); }
+  .form { display: grid; gap: 10px; }
+  .form input, .form textarea { width: 100%; padding: 13px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: #fff; font: inherit; font-size: 0.95rem; }
+  .form input::placeholder, .form textarea::placeholder { color: rgba(255,255,255,.55); }
+  .form .ok { color: #cfe8d8; font-size: 0.9rem; }
+  .form .err { color: #ffd2c2; font-size: 0.9rem; }
+
+  footer { padding: 34px 0 44px; color: var(--muted); font-size: 0.86rem; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+  footer a { color: var(--ink-2); text-decoration: none; margin-left: 18px; }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="/">
+      <span class="mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></span>
+      <span>Career Pilot<small>YOUR NEXT CHAPTER</small></span>
+    </a>
+    <div class="nav-links">
+      <a class="link" href="#features">Features</a>
+      <a class="link" href="#how">How it works</a>
+      <a class="link" href="#pricing">Pricing</a>
+      <a class="link" href="#faq">FAQ</a>
+      <a class="btn btn-ghost" href="/app/">Sign in</a>
+      <a class="btn btn-primary" href="#invite">Request an invite</a>
+    </div>
+  </div>
+</nav>
+
+<header class="wrap hero">
+  <div>
+    <span class="badge"><i></i> Private beta · invitation only · free during the beta</span>
+    <h1>A job search assistant that only says what your CV can prove.</h1>
+    <p class="lead" style="margin-top:20px">Career Pilot watches the job sources you choose around the clock, explains requirement by requirement how each posting matches your <strong>verified</strong> experience, alerts you on Telegram, and drafts fact-checked applications only when you ask. Built for data, AI, climate, geospatial, agriculture and development-sector careers.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="#invite">Request an invite</a>
+      <a class="btn btn-ghost" href="#how">See how it works</a>
+    </div>
+    <p class="note">Bring your own OpenAI key. Nothing is ever submitted to an employer on your behalf.</p>
+  </div>
+  <div class="demo" aria-label="Example match card">
+    <span class="float">Evaluated against 33 verified facts</span>
+    <div class="card">
+      <div class="top">
+        <div>
+          <div class="company">One Acre Fund · Ethiopia · ReliefWeb</div>
+          <div class="title">MEL Data Automation Officer</div>
+        </div>
+        <div class="score"><b>84</b><small>MATCH</small></div>
+      </div>
+      <div class="meta">Strong technical and domain match for data automation: 8+ years of data work, verified R, Python and SQL, dashboard delivery.</div>
+      <div class="req"><span class="met">MET</span><div>Proficiency in R or Stata <em>Evidence F33: verified R proficiency, plus Python and SQL</em></div></div>
+      <div class="req"><span class="met">MET</span><div>Data visualisation skills <em>Evidence F12, F16: dashboards delivered for two programmes</em></div></div>
+      <div class="req"><span class="unknown">UNKNOWN</span><div>Citizenship or permanent residence <em>Mandatory. Not in your evidence, so it is never assumed.</em></div></div>
+    </div>
+    <div class="card tg">
+      <div class="bubble">
+        <strong>New match · 84/100</strong><br>MEL Data Automation Officer · One Acre Fund · Ethiopia<br><span style="color:var(--muted)">Deadline 30 Sep · Gaps: citizenship not documented</span>
+        <div class="buttons"><span>Interested</span><span>Skip</span></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="strip">
+  <div class="wrap">
+    <span>Reads from</span>
+    <span>ReliefWeb</span><span>LinkedIn alerts</span><span>Devex &amp; UNjobs alerts</span><span>Greenhouse</span><span>Lever</span><span>Workable</span><span>SmartRecruiters</span><span>Ashby</span><span>Remotive</span><span>Any RSS feed or careers page</span>
+  </div>
+</div>
+
+<section id="features" class="wrap">
+  <div class="section-head">
+    <span class="eyebrow">What it does</span>
+    <h2>Discovery, explanation, alerts and drafting. All grounded in evidence.</h2>
+    <p class="lead">Most job tools rank titles by keywords. Career Pilot compares the actual requirements of each posting with facts you verified from your own CV, and shows its reasoning.</p>
+  </div>
+  <div class="grid-3">
+    <div class="feature"><div class="icon">◎</div><h3>Continuous discovery</h3><p>Every few hours it reads ReliefWeb, employer boards, your email alerts from LinkedIn, Devex or UNjobs, and any feed or careers page you add. Duplicates are merged, closed deadlines flagged.</p></div>
+    <div class="feature"><div class="icon">≡</div><h3>Requirement-level matching</h3><p>Each posting gets a 0 to 100 relevance score plus a table of requirements marked met, unknown or not met, each pointing to the evidence behind it. Unknown is never rounded up to met.</p></div>
+    <div class="feature"><div class="icon">✦</div><h3>Why you fit, and what is missing</h3><p>Strengths written in terms of your real projects, and gaps stated plainly, including eligibility criteria such as citizenship or language that your CV does not document.</p></div>
+    <div class="feature"><div class="icon">➤</div><h3>Alerts where you are</h3><p>Matches above your threshold land in your inbox and on Telegram, with Interested and Skip buttons. One message per job or one digest per search; you choose.</p></div>
+    <div class="feature"><div class="icon">✎</div><h3>Fact-checked application drafts</h3><p>When you click Prepare application, it drafts a tailored CV, cover letter and screening answers, then an independent review rejects any claim your evidence does not support. Export as DOCX and PDF.</p></div>
+    <div class="feature"><div class="icon">🔒</div><h3>Private by design</h3><p>Your own OpenAI key, encrypted at rest. Your workspace is yours alone. Nothing is submitted, no employer is contacted, no fact is invented.</p></div>
+  </div>
+</section>
+
+<section id="how" class="wrap">
+  <div class="section-head">
+    <span class="eyebrow">How it works</span>
+    <h2>From CV to shortlist in an afternoon. Then it runs on its own.</h2>
+  </div>
+  <div class="steps">
+    <div class="step"><h3>Verify your evidence</h3><p>Upload your CV. Facts are extracted with exact source quotes and you tick the ones that are true. Only verified facts are ever used.</p></div>
+    <div class="step"><h3>Choose your sources</h3><p>Add suggested feeds for your field, employer boards, or a mailbox label where your LinkedIn and Devex alerts arrive.</p></div>
+    <div class="step"><h3>Get explained matches</h3><p>Searches run on your schedule. Strong matches are announced with the reasoning, the gaps and the deadline.</p></div>
+    <div class="step"><h3>Prepare, review, apply</h3><p>Draft an application in minutes, edit it, export it, and submit it yourself through the employer's channel.</p></div>
+  </div>
+</section>
+
+<section class="trust">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow">Built for careers in</span>
+      <h2>Data science, AI, climate, geospatial, agriculture and international development.</h2>
+      <p class="lead">Sources and suggestions are tuned for this sector: development agencies, research centres, NGOs and remote-first employers, with Africa-based and remote roles in focus.</p>
+    </div>
+    <ul>
+      <li><span class="check">✓</span><div><b>Never invents.</b> Every career claim in a draft traces to a fact you verified; the reviewer rejects the rest.</div></li>
+      <li><span class="check">✓</span><div><b>Never submits.</b> You export documents and apply through the official channel. No automation of employer portals.</div></li>
+      <li><span class="check">✓</span><div><b>Honest about eligibility.</b> Mandatory criteria your CV does not cover are shown as unknown, not hidden.</div></li>
+      <li><span class="check">✓</span><div><b>Cost under your control.</b> AI usage runs on your key, with a cap per search and no re-evaluation of postings already seen.</div></li>
+    </ul>
+  </div>
+</section>
+
+<section id="pricing" class="wrap">
+  <div class="section-head">
+    <span class="eyebrow">Pricing</span>
+    <h2>Free to start. Pay for depth when it earns its keep.</h2>
+    <p class="lead">The beta is free by invitation. These are the planned plans after the beta; beta members keep a founding discount.</p>
+  </div>
+  <div class="pricing-note">◆ Regional pricing applies: about 40 to 50 percent lower for members in Africa and South Asia.</div>
+  <div class="plans">
+    <div class="plan">
+      <div class="name">Free</div>
+      <div class="price">$0<small> / month</small></div>
+      <div class="for">Feel the value before paying anything.</div>
+      <ul>
+        <li>Manual jobs and 2 sources</li>
+        <li>10 AI evaluations a week</li>
+        <li>In-app inbox and keyword ranking</li>
+        <li>Verified evidence bank</li>
+      </ul>
+      <a class="btn btn-ghost" href="#invite">Request an invite</a>
+    </div>
+    <div class="plan hot">
+      <div class="name">Pro</div>
+      <div class="price">$9<small> / month · $79 / year</small></div>
+      <div class="for">Continuous search with alerts and drafting.</div>
+      <ul>
+        <li>Unlimited sources, including email alerts</li>
+        <li>300 evaluations a month</li>
+        <li>Telegram and email alerts, scheduled searches</li>
+        <li>8 fact-checked application packages a month</li>
+      </ul>
+      <a class="btn btn-primary" href="#invite">Request an invite</a>
+    </div>
+    <div class="plan">
+      <div class="name">Pro Plus</div>
+      <div class="price">$19<small> / month</small></div>
+      <div class="for">For an active search across many roles.</div>
+      <ul>
+        <li>1,000 evaluations a month</li>
+        <li>30 application packages a month</li>
+        <li>Digest mode and priority processing</li>
+        <li>Application history and exports</li>
+      </ul>
+      <a class="btn btn-ghost" href="#invite">Request an invite</a>
+    </div>
+    <div class="plan">
+      <div class="name">Bring your own key</div>
+      <div class="price">$4<small> / month</small></div>
+      <div class="for">Use your own OpenAI key; pay only for the platform.</div>
+      <ul>
+        <li>Everything in Pro Plus</li>
+        <li>AI usage billed by OpenAI to you</li>
+        <li>Full control of models and spend</li>
+        <li>What beta members use today</li>
+      </ul>
+      <a class="btn btn-ghost" href="#invite">Request an invite</a>
+    </div>
+  </div>
+  <div class="addons">
+    <div class="addon"><b>Extra application packages</b>$2 each, or 5 for $8. A tailored, reviewed application the night before a deadline.</div>
+    <div class="addon"><b>Teams and institutions</b>From $300 a year per cohort: career centres, fellowship alumni programmes, bootcamps and NGO talent networks. Seats, an admin view and an onboarding session.</div>
+    <div class="addon"><b>Payment</b>Cards worldwide through a merchant of record; local options for Ethiopia planned. Annual plans and invoices available for institutions.</div>
+  </div>
+</section>
+
+<section id="faq" class="wrap">
+  <div class="section-head">
+    <span class="eyebrow">Questions</span>
+    <h2>Straight answers.</h2>
+  </div>
+  <details open><summary>Does it apply to jobs for me?</summary><p>No, and it never will. It prepares documents you review and export; you submit them through the employer's official channel. Automation of application portals is deliberately out of scope.</p></details>
+  <details><summary>Where do the postings come from?</summary><p>From sources you enable: ReliefWeb, employer boards on Greenhouse, Lever, Workable, SmartRecruiters and Ashby, Remotive, any RSS feed or public careers page, and job-alert emails from LinkedIn, Devex, UNjobs, Impactpool or ReliefWeb that you route to a mailbox label. LinkedIn itself is never scraped.</p></details>
+  <details><summary>What does "bring your own key" mean?</summary><p>You paste an OpenAI API key in your account. Evaluations and drafts run on it, so you pay OpenAI directly, typically 1 to 3 dollars for a search of 50 postings. The key is stored encrypted and can be removed at any time.</p></details>
+  <details><summary>Is the match score a hiring probability?</summary><p>No. It is a relevance score between the posting's requirements and your verified facts. Mandatory eligibility is tracked separately and shown as met, unknown or not met.</p></details>
+  <details><summary>What happens to my data?</summary><p>Your CV text, verified facts, postings, evaluations and drafts stay in your private workspace. The owner of the service sees only account-level activity to improve the beta. You can remove connections at any time and ask for full deletion. See the <a href="/privacy.html">privacy notice</a>.</p></details>
+</section>
+
+<section class="wrap" id="invite">
+  <div class="cta">
+    <div>
+      <span class="eyebrow" style="color:#bfd8c9">Private beta</span>
+      <h2>Request an invitation.</h2>
+      <p>We are onboarding a small cohort of professionals in data, climate, geospatial, agriculture and development roles. Tell us a line about your field and we will send an invitation code.</p>
+    </div>
+    <form class="form" id="waitlist" novalidate>
+      <input type="text" name="name" placeholder="Your name" autocomplete="name" />
+      <input type="email" name="email" placeholder="Email address" required autocomplete="email" />
+      <textarea name="note" rows="3" placeholder="Your field and what you are looking for (optional)"></textarea>
+      <button class="btn btn-light" type="submit">Request an invite</button>
+      <p class="ok" id="ok" hidden>Thank you. Your request is in; invitations go out in small batches.</p>
+      <p class="err" id="err" hidden></p>
+      <p style="font-size:.8rem;color:rgba(255,255,255,.6)">Already have a code? <a href="/app/" style="color:#fff">Create your account</a>.</p>
+    </form>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="year"></span> Career Pilot · A personal approach to your next role.</span>
+    <span><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/app/">Sign in</a></span>
+  </div>
+</footer>
+
+<script>
+  document.getElementById("year").textContent = new Date().getFullYear();
+  const form = document.getElementById("waitlist");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const ok = document.getElementById("ok"), err = document.getElementById("err");
+    ok.hidden = true; err.hidden = true;
+    const data = Object.fromEntries(new FormData(form).entries());
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email || "")) { err.textContent = "Enter a valid email address."; err.hidden = false; return; }
+    const button = form.querySelector("button"); button.disabled = true;
+    try {
+      const r = await fetch("/api/waitlist", { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "CareerPilot" }, body: JSON.stringify(data) });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.detail || "Something went wrong."); }
+      form.reset(); ok.hidden = false;
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+    finally { button.disabled = false; }
+  });
+</script>
+</body>
+</html>

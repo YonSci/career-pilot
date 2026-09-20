@@ -202,6 +202,7 @@ type Metrics = Account & {
 type Overview = {
   users: Metrics[];
   invites: { code: string; note: string; created: string; used_by: string | null }[];
+  waitlist: { email: string; name: string; note: string; created: string }[];
   totals: { users: number; activated: number; drafted: number; with_key: number; telegram: number };
   plans: Record<string, { label: string }>;
 };
@@ -422,7 +423,7 @@ function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_
             <p>A personal job-search assistant. It collects postings from sources you choose, explains how each one matches the CV facts you verified, alerts you, and drafts applications only when you ask.</p>
             <p>You bring your own OpenAI API key; nothing is ever submitted to employers on your behalf.</p>
             <p className="field-help">
-              <a href="/privacy.html" target="_blank" rel="noreferrer">Privacy</a> · <a href="/terms.html" target="_blank" rel="noreferrer">Terms</a>
+              <a href="/">About Career Pilot</a> · <a href="/privacy.html" target="_blank" rel="noreferrer">Privacy</a> · <a href="/terms.html" target="_blank" rel="noreferrer">Terms</a>
             </p>
           </section>
         </div>
@@ -630,6 +631,7 @@ export default function Home() {
       await call("/auth/logout", "POST");
       setSignedIn(false);
       setS(initial);
+      window.location.href = "/";
     });
   const lastRun = s.runs[0];
   if (signedIn === false) {
@@ -1617,7 +1619,7 @@ export default function Home() {
                         <strong>New codes (share one per person)</strong>
                         {newCodes.map((c) => (
                           <p key={c} className="muted-text">
-                            {window.location.origin}/?invite={c}
+                            {window.location.origin}/app/?invite={c}
                           </p>
                         ))}
                       </div>
@@ -1626,6 +1628,24 @@ export default function Home() {
                       {overview.invites.filter((i) => !i.used_by).length} unused · {overview.invites.filter((i) => i.used_by).length} used
                     </p>
                   </section>
+                  {overview.waitlist && overview.waitlist.length > 0 && (
+                    <section className="panel">
+                      <h2>Invitation requests ({overview.waitlist.length})</h2>
+                      <p className="field-help">From the landing page. Generate a code above and send it to them.</p>
+                      {overview.waitlist.map((w) => (
+                        <div className="source-row" key={w.email}>
+                          <UserRound size={18} />
+                          <div>
+                            <strong>{w.name || w.email}</strong>
+                            <p>
+                              {w.email}
+                              {w.note ? " · " + w.note : ""} · {new Date(w.created).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </section>
+                  )}
                   <section className="panel">
                     <h2>Accounts</h2>
                     <div className="table-scroll">

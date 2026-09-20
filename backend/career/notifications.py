@@ -61,7 +61,7 @@ def availability(db=None):
 
 
 def job_link(job_id):
-    return settings.public_url.rstrip("/") + "/?job=" + quote(job_id)
+    return settings.public_url.rstrip("/") + "/app/?job=" + quote(job_id)
 
 
 def alert_text(job, match, job_id):

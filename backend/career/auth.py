@@ -145,6 +145,34 @@ def list_invites(db):
     return [r.data for r in rows(db, "invite", user_id=SYSTEM)]
 
 
+def add_waitlist(db, email, name="", note=""):
+    """Public invitation requests from the landing page (system records)."""
+    email = (email or "").strip().lower()
+    if "@" not in email or len(email) > 320:
+        raise ValueError("Enter a valid email address.")
+    key = "waitlist:" + email
+    existing = read(db, key, user_id=SYSTEM) or {}
+    put(
+        db,
+        "waitlist",
+        key,
+        {
+            "email": email,
+            "name": (name or "").strip()[:200] or existing.get("name", ""),
+            "note": (note or "").strip()[:500] or existing.get("note", ""),
+            "created": existing.get("created") or now(),
+            "updated": now(),
+            "invited": existing.get("invited"),
+        },
+        user_id=SYSTEM,
+    )
+    return key
+
+
+def list_waitlist(db):
+    return sorted((r.data for r in rows(db, "waitlist", user_id=SYSTEM)), key=lambda w: w.get("created", ""), reverse=True)
+
+
 def admin_user(db):
     return db.query(User).filter_by(role="admin").order_by(User.created).first()
 
