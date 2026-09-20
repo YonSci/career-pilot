@@ -429,3 +429,32 @@ def test_webhook_handles_linking_messages(client, monkeypatch):
     assert r.status_code == 200
     assert client.get("/api/state").json()["telegram"]["linked"] is True
     assert sent and sent[-1][0] == "sendMessage"
+
+
+def test_delivery_failure_logs_never_contain_the_bot_token(client, monkeypatch, caplog):
+    import logging
+    from career import notifications
+
+    token = "123456:FAKE-TOKEN-abcDEF"
+    monkeypatch.setattr(settings, "telegram_bot_token", token)
+    monkeypatch.setattr(notifications, "availability", lambda db=None: {"telegram": True})
+    monkeypatch.setattr(notifications, "telegram_chat", lambda db=None: "1")
+
+    def failing_post(url, **kw):
+        request = httpx.Request("POST", url)
+        response = httpx.Response(401, request=request, text="Unauthorized " + url)
+        raise httpx.HTTPStatusError("Client error '401 Unauthorized' for url '" + url + "'", request=request, response=response)
+
+    monkeypatch.setattr(notifications.httpx, "post", failing_post)
+    match = {"score": 90, "summary": "s", "strengths": [], "gaps": [], "mode": "ai"}
+    with caplog.at_level(logging.WARNING, logger="career.notifications"):
+        with Session() as db:
+            from career.db import user_scope, user_snapshot
+
+            owner = db.query(User).first()
+            with user_scope(user_snapshot(owner)):
+                assert notifications.notify(db, "job-a", JOB, match, ["telegram"])["telegram"] == "delivery_unknown"
+                assert notifications.notify_digest(db, [("job-b", JOB, match)], ["telegram"])["telegram"] == "delivery_unknown"
+    assert caplog.records, "failures are logged"
+    assert token not in caplog.text and "FAKE-TOKEN" not in caplog.text
+    assert "HTTPStatusError HTTP 401" in caplog.text

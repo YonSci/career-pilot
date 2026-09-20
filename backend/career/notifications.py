@@ -14,6 +14,21 @@ INAPP = "inapp"
 log = logging.getLogger(__name__)
 
 
+def describe_failure(e):
+    """A log-safe description: exception type and HTTP status only. Provider
+    error text can contain request URLs, and Telegram's URL carries the bot
+    token, so the raw message is never logged."""
+    status = ""
+    response = getattr(e, "response", None)
+    if response is not None and getattr(response, "status_code", None):
+        status = f" HTTP {response.status_code}"
+    text = f"{type(e).__name__}{status}"
+    for secret in (settings.telegram_bot_token, settings.smtp_password, settings.twilio_auth_token):
+        if secret and secret in text:
+            text = text.replace(secret, "[redacted]")
+    return text
+
+
 def is_owner():
     return (current_user() or {}).get("role") == "admin"
 
@@ -225,7 +240,7 @@ def notify(db, job_id, job, match, channels):
             status = "accepted"
         except Exception as e:
             # An HTTP timeout may occur after provider acceptance. Never auto-resend.
-            log.warning("Alert via %s not confirmed for job %s: %s: %s", channel, job_id, type(e).__name__, str(e)[:200])
+            log.warning("Alert via %s not confirmed for job %s: %s", channel, job_id, describe_failure(e))
             status = "delivery_unknown"
         put(db, "alert", row.key, {**row.data, "status": status})
         results[channel] = status
@@ -261,7 +276,7 @@ def notify_digest(db, entries, channels):
                 telegram_send(chat_id, text)
             status = "accepted"
         except Exception as e:
-            log.warning("Digest via %s not confirmed: %s: %s", channel, type(e).__name__, str(e)[:200])
+            log.warning("Digest via %s not confirmed: %s", channel, describe_failure(e))
             status = "delivery_unknown"
         for row, _ in fresh:
             put(db, "alert", row.key, {**row.data, "status": status})
