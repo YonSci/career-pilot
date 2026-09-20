@@ -66,6 +66,11 @@ def job_link(job_id):
     return settings.public_url.rstrip("/") + "/app/?job=" + quote(job_id)
 
 
+def dashboard_is_public():
+    """Only a public HTTPS dashboard is worth linking from a phone or inbox."""
+    return settings.public_https
+
+
 def alert_text(job, match, job_id):
     gaps = "; ".join(match.get("gaps", [])[:3]) or "Review the full eligibility assessment."
     strengths = "; ".join(match.get("strengths", [])[:2])
@@ -79,26 +84,38 @@ def alert_text(job, match, job_id):
         lines.append("Why you fit: " + strengths)
     lines.append("Gaps / unknowns: " + gaps)
     lines.append("Deadline: " + (job.get("deadline") or "Not specified"))
-    lines.append("Review: " + job_link(job_id))
     if job.get("url"):
         lines.append("Posting: " + job["url"])
+    if dashboard_is_public():
+        lines.append("Review in " + settings.app_name + ": " + job_link(job_id))
     return "\n".join(lines)
 
 
 def digest_text(entries):
-    lines = [f"{settings.app_name}: {len(entries)} new matching job(s)"]
-    for job_id, job, match in entries:
+    lines = [f"{settings.app_name}: {len(entries)} new matching job(s)", ""]
+    for n, (job_id, job, match) in enumerate(entries, 1):
+        lines.append(f"{n}. {job['title']} | {job.get('company') or 'Employer not specified'} | {job.get('location') or 'Location not specified'}")
+        lines.append(f"   Match {match['score']}/100. " + (match.get("summary", "")[:300]))
+        strengths = "; ".join(match.get("strengths", [])[:1])
+        if strengths:
+            lines.append("   Why you fit: " + strengths[:300])
+        gaps = "; ".join(match.get("gaps", [])[:2])
+        if gaps:
+            lines.append("   Gaps / unknowns: " + gaps[:300])
+        lines.append("   Deadline: " + (job.get("deadline") or "Not specified"))
+        if job.get("url"):
+            lines.append("   Posting: " + job["url"])
+        if dashboard_is_public():
+            lines.append("   Review: " + job_link(job_id))
         lines.append("")
-        lines.append(f"• {match['score']}/100  {job['title']} | {job.get('company') or '—'} | {job.get('location') or '—'}")
-        lines.append("  " + (match.get("summary", "")[:240]))
-        lines.append("  Deadline: " + (job.get("deadline") or "Not specified") + " · " + job_link(job_id))
+    lines.append("Open " + settings.app_name + " to see the full requirement table and prepare an application.")
     return "\n".join(lines)
 
 
 def telegram_send(chat_id, text, job_id=None):
     keyboard = []
     if job_id:
-        if settings.public_https:
+        if dashboard_is_public():
             keyboard.append([{"text": "Review job", "url": job_link(job_id)}])
         keyboard.append(
             [

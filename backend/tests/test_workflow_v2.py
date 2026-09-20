@@ -116,6 +116,43 @@ def test_digest_alert_sends_one_message(client, monkeypatch):
     assert len(sent) == 1
 
 
+def test_email_is_bundled_while_telegram_stays_per_job(client, monkeypatch):
+    verified_profile(client)
+    client.post("/api/sources", json={"kind": "greenhouse", "value": "example"})
+    feed = [JOB, {**JOB, "title": "Climate Analyst", "url": "https://example.org/jobs/2"}, {**JOB, "title": "GIS Lead", "url": "https://example.org/jobs/3"}]
+    monkeypatch.setattr("career.service.collect", lambda *a, **k: (feed, []))
+    monkeypatch.setattr(settings, "openai_api_key", "fake-test-key")
+    monkeypatch.setattr("career.service.match_job", lambda *a: {"score": 95, "summary": "S", "requirements": [], "strengths": ["fit"], "gaps": [], "mode": "ai"})
+    monkeypatch.setattr("career.notifications.availability", lambda db=None: {"telegram": True, "email": True})
+    monkeypatch.setattr("career.service.notify_ready", lambda db=None: {"telegram": True, "email": True})
+    monkeypatch.setattr("career.notifications.telegram_chat", lambda db=None: "1")
+    telegram_sent, emails = [], []
+    monkeypatch.setattr("career.notifications.telegram_send", lambda chat, text, job_id=None: telegram_sent.append(job_id))
+    monkeypatch.setattr("career.notifications.email_send", lambda subject, text, to=None: emails.append((subject, text)))
+    prefs = client.get("/api/state").json()["preferences"]
+    client.put("/api/preferences", json={**prefs, "alerts_enabled": True, "notify_channels": ["telegram", "email"], "alert_mode": "each", "email_digest": True})
+    client.post("/api/scan")
+    assert len(telegram_sent) == 3 and all(telegram_sent)
+    assert len(emails) == 1 and "3 new matching" in emails[0][0]
+    assert "1. Climate Data Scientist" in emails[0][1] and "3. " in emails[0][1] and "Why you fit: fit" in emails[0][1]
+    run = client.get("/api/state").json()["runs"][0]
+    assert run["delivered"]["email"] == "accepted" and run["delivered"]["telegram"] == "accepted"
+    client.post("/api/scan")
+    assert len(emails) == 1 and len(telegram_sent) == 3
+
+
+def test_review_link_only_on_public_dashboards(monkeypatch):
+    from career.notifications import alert_text, digest_text
+
+    job = {"title": "T", "company": "C", "location": "L", "url": "https://example.org/j", "deadline": None}
+    match = {"score": 80, "summary": "s", "strengths": [], "gaps": []}
+    monkeypatch.setattr(settings, "public_url", "http://localhost:8000")
+    assert "localhost" not in alert_text(job, match, "id1") and "Posting: https://example.org/j" in alert_text(job, match, "id1")
+    assert "localhost" not in digest_text([("id1", job, match)])
+    monkeypatch.setattr(settings, "public_url", "https://career.example.org")
+    assert "https://career.example.org/app/?job=id1" in alert_text(job, match, "id1")
+
+
 def test_source_test_endpoint_and_toggle(client, monkeypatch):
     monkeypatch.setattr("career.main.collect", lambda source, seen, ctx: ([JOB, {"url": "x", "partial": True}], []))
     r = client.post("/api/sources/test", json={"kind": "greenhouse", "value": "example"}).json()

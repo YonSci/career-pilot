@@ -471,12 +471,17 @@ def _run_scan(run_id):
             fresh.sort(key=lambda r: -(r.data["match"]["score"]))
             fresh = fresh[: prefs["max_alerts_per_run"]]
             outcomes = {}
-            if fresh and prefs.get("alert_mode") == "digest" and len(fresh) > 1:
-                outcomes = notify_digest(db, [(r.id, r.data, r.data["match"]) for r in fresh], channels)
-            else:
-                for row in fresh:
-                    for channel, status in notify(db, row.id, row.data, row.data["match"], channels).items():
-                        outcomes[channel] = status
+            # Email is bundled into one summary per search; other channels follow alert_mode.
+            digest_channels = [
+                c for c in channels
+                if prefs.get("alert_mode") == "digest" or (c == "email" and prefs.get("email_digest", True))
+            ]
+            per_job_channels = [c for c in channels if c not in digest_channels]
+            for row in fresh:
+                for channel, status in notify(db, row.id, row.data, row.data["match"], per_job_channels).items():
+                    outcomes[channel] = status
+            if fresh and digest_channels:
+                outcomes.update(notify_digest(db, [(r.id, r.data, r.data["match"]) for r in fresh], digest_channels))
             result["alerts"] = len(fresh)
             result["delivered"] = outcomes
         # Retire postings that have disappeared from every feed and were never shortlisted.

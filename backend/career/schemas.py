@@ -43,6 +43,8 @@ class Preferences(BaseModel):
     max_alerts_per_run: int = Field(default=10, ge=1, le=30)
     # "each" sends one message per job; "digest" sends one summary per run.
     alert_mode: Literal["each", "digest"] = "each"
+    # Email is bundled into one summary per search regardless of alert_mode.
+    email_digest: bool = True
     # "soft" ranks preferred locations first; "strict" drops other locations.
     location_mode: Literal["soft", "strict"] = "soft"
     scan_interval_hours: int = Field(default=6, ge=1, le=48)

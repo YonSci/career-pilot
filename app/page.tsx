@@ -120,6 +120,7 @@ type Prefs = {
   alerts_enabled: boolean;
   max_alerts_per_run: number;
   alert_mode: string;
+  email_digest: boolean;
   location_mode: string;
   scan_interval_hours: number;
 };
@@ -225,6 +226,7 @@ const defaults: Prefs = {
   alerts_enabled: false,
   max_alerts_per_run: 10,
   alert_mode: "each",
+  email_digest: true,
   location_mode: "soft",
   scan_interval_hours: 6,
 };
@@ -1493,6 +1495,10 @@ export default function Home() {
                         <SelectItem value="digest">One digest per search</SelectItem>
                       </SelectContent>
                     </Select>
+                  </label>
+                  <label className="channel-row" style={{ gap: 8 }}>
+                    <Checkbox checked={prefs.email_digest} onCheckedChange={(v) => setPrefs({ ...prefs, email_digest: v === true })} />
+                    <span className="muted-text">Email: one summary per search instead of one email per job</span>
                   </label>
                   <button className="text-button" onClick={savePrefs}>
                     Save notification choices <Check size={16} />
