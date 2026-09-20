@@ -3,7 +3,7 @@
 # single instance; SQLite lives on the disk. Scale to Postgres + worker later.
 services:
   - type: web
-    name: career-pilot
+    name: jobs-find-ai
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     plan: starter            # free instances sleep, which stops scheduled searches
