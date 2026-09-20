@@ -189,9 +189,9 @@ def test_deferred_sources_run_first_next_time(client, monkeypatch):
 
 def test_evaluations_stop_when_the_time_budget_is_spent(client, monkeypatch):
     verified_profile(client)
-    client.post("/api/sources", json={"kind": "greenhouse", "value": "example"})
-    feed = [{**JOB, "title": f"Data Scientist {i}", "url": f"https://example.org/jobs/{i}"} for i in range(6)]
-    monkeypatch.setattr("career.service.collect", lambda *a, **k: (feed, []))
+    # Postings already in the workspace, no sources: only the evaluation step runs.
+    for i in range(6):
+        client.post("/api/jobs", json={**JOB, "title": f"Data Scientist {i}", "url": f"https://example.org/jobs/{i}"})
     monkeypatch.setattr(settings, "openai_api_key", "fake-test-key")
     monkeypatch.setattr(settings, "scan_time_budget_minutes", 0)
     calls = []
