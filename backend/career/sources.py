@@ -70,23 +70,46 @@ def public_url(url):
     return url
 
 
+def assert_public_peer(response):
+    """After the connection is made, confirm the address actually connected to is
+    public. Closes the window between the DNS check and the connection (rebinding)."""
+    stream = response.extensions.get("network_stream")
+    if stream is None:
+        return  # mocked transport
+    try:
+        peer = stream.get_extra_info("server_addr")
+    except Exception:
+        return
+    if not peer:
+        return
+    address = peer[0].split("%")[0]
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return
+    if not ip.is_global or ip.is_private or ip.is_loopback or ip.is_link_local:
+        raise ValueError("That address points to a private or local network and cannot be used as a source.")
+
+
 def safe_get(client, url, accept=None):
     """GET with manual redirects so every hop is checked against the network
-    policy, and with a bound on the response size."""
+    policy, a post-connect peer check, and a bound on the response size.
+    The returned response carries decoded bytes, so encoding headers are dropped."""
     current = public_url(url)
     for _ in range(MAX_REDIRECTS + 1):
         with client.stream("GET", current, follow_redirects=False, headers={"Accept": accept} if accept else None) as r:
+            assert_public_peer(r)
             if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
                 current = public_url(urljoin(current, r.headers["location"]))
                 continue
             r.raise_for_status()
             content = bytearray()
-            for chunk in r.iter_bytes():
+            for chunk in r.iter_bytes():  # decoded (gzip/br handled by httpx)
                 content.extend(chunk)
                 if len(content) >= MAX_PAGE_BYTES:
                     break
-            r.headers  # keep headers accessible after streaming
-            return httpx.Response(r.status_code, headers=r.headers, content=bytes(content[:MAX_PAGE_BYTES]), request=r.request)
+            headers = {k: v for k, v in r.headers.items() if k.lower() not in ("content-encoding", "content-length", "transfer-encoding")}
+            return httpx.Response(r.status_code, headers=headers, content=bytes(content[:MAX_PAGE_BYTES]), request=r.request)
     raise ValueError("Too many redirects.")
 
 
@@ -733,6 +756,36 @@ def gmail(client, value, ctx):
 IMAP_TIMEOUT = 30
 
 
+def public_host(host):
+    """Same destination policy as public_url, for non-HTTP hosts. Returns one
+    validated public address to connect to."""
+    host = (host or "").strip().lower()
+    if not host or host in ("localhost",) or host.endswith((".localhost", ".local", ".internal")):
+        raise ValueError("Local or private addresses cannot be used.")
+    try:
+        candidates = [host] if ipaddress.ip_address(host) else []
+    except ValueError:
+        candidates = resolve_host(host)
+    for address in candidates:
+        ip = ipaddress.ip_address(address.split("%")[0])
+        if not ip.is_global or ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+            raise ValueError("That mailbox address points to a private or local network and cannot be used.")
+    return candidates[0]
+
+
+def imap_connect(host, port, timeout=IMAP_TIMEOUT):
+    """TLS IMAP connection to a validated public address, keeping the hostname
+    for certificate verification, so DNS cannot redirect it after the check."""
+    address = public_host(host)
+
+    def _create_socket(self, timeout_):
+        sock = socket.create_connection((address, self.port), timeout_)
+        return self.ssl_context.wrap_socket(sock, server_hostname=self.host)
+
+    pinned = type("PinnedIMAP4_SSL", (imaplib.IMAP4_SSL,), {"_create_socket": _create_socket})
+    return pinned(host, int(port or 993), timeout=timeout)
+
+
 def _imap_quote(folder):
     return '"' + folder.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -748,7 +801,7 @@ def imap_mailbox(client, value, ctx):
     folder = (value or creds.get("folder") or "CareerPilot").strip()
     since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%d-%b-%Y")
     jobs, pending = [], []
-    with imaplib.IMAP4_SSL(creds["host"], int(creds.get("port") or 993), timeout=IMAP_TIMEOUT) as box:
+    with imap_connect(creds["host"], creds.get("port")) as box:
         try:
             box.login(creds["username"], creds["password"])
         except imaplib.IMAP4.error:
@@ -792,7 +845,7 @@ def imap_mailbox(client, value, ctx):
 
 def imap_check(creds):
     """Verify mailbox credentials and folder without reading any message."""
-    with imaplib.IMAP4_SSL(creds["host"], int(creds.get("port") or 993), timeout=IMAP_TIMEOUT) as box:
+    with imap_connect(creds["host"], creds.get("port")) as box:
         try:
             box.login(creds["username"], creds["password"])
         except imaplib.IMAP4.error:

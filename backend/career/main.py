@@ -63,7 +63,7 @@ async def lifespan(app):
         scheduler.shutdown()
 
 
-VERSION = "0.3.3"
+VERSION = "0.3.4"
 app = FastAPI(title=settings.app_name, version=VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -427,7 +427,7 @@ def admin_invites(body: InviteRequest, _: User = Depends(admin), db=Depends(db_s
 
 
 class UserEdit(BaseModel):
-    plan: Literal["free", "beta", "pro"] | None = None
+    plan: Literal["free", "beta", "pro", "pro_plus"] | None = None
     role: Literal["admin", "member"] | None = None
 
 
@@ -788,6 +788,28 @@ def inbox_read(body: InboxRead, db=Depends(db_session)):
         put(db, "alert", row.key, {**row.data, "status": "read", "read_at": now()})
         changed += 1
     return {"read": changed}
+
+
+@app.post("/api/alerts/{id}/resend", dependencies=[Depends(auth)])
+async def resend_alert(id: str, db=Depends(db_session)):
+    """Manual recovery for an alert whose delivery was unknown or failed."""
+    row = row_or_404(db, id, "alert")
+    if row.data.get("channel") == "inapp":
+        raise HTTPException(422, "In-app alerts are not sent anywhere.")
+    if row.data.get("status") not in ("delivery_unknown", "failed"):
+        raise HTTPException(422, "Only alerts with unknown or failed delivery can be resent.")
+    job = get_row(db, row.data.get("job_id", ""), "job")
+    if not job or not job.data.get("match"):
+        raise HTTPException(409, "The job or its evaluation no longer exists.")
+    from .notifications import send_alert, telegram_chat
+
+    try:
+        await run_in_threadpool(send_alert, row.data["channel"], job.data, job.data["match"], job.id, telegram_chat(db))
+        status = "accepted"
+    except Exception:
+        status = "delivery_unknown"
+    put(db, "alert", row.key, {**row.data, "status": status, "resent_at": now(), "resends": (row.data.get("resends") or 0) + 1})
+    return {"status": status}
 
 
 @app.post("/api/notify/test/{channel}", dependencies=[Depends(auth)])

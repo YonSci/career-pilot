@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     evaluation_workers: int = 4
     # Accounts whose scheduled searches may run at the same time.
     scan_workers: int = 2
+    # Sources still unread after this many minutes are deferred to the next search.
+    scan_time_budget_minutes: int = 20
     # Politeness limits for connectors that read individual public posting pages.
     max_page_fetches_per_run: int = 60
     fetch_delay_seconds: float = 1.0

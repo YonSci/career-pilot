@@ -167,7 +167,7 @@
   @media (max-width: 560px) { .plans { grid-template-columns: 1fr; } }
   .plan { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; display: flex; flex-direction: column; }
   .plan.hot { border-color: var(--green); box-shadow: var(--shadow); position: relative; }
-  .plan.hot::after { content: "Most popular"; position: absolute; top: -12px; left: 22px; background: var(--green); color: #fff; font-size: 0.7rem; font-weight: 700; letter-spacing: .08em; padding: 4px 10px; border-radius: 999px; }
+  .plan.hot::after { content: "Recommended"; position: absolute; top: -12px; left: 22px; background: var(--green); color: #fff; font-size: 0.7rem; font-weight: 700; letter-spacing: .08em; padding: 4px 10px; border-radius: 999px; }
   .plan .name { font-weight: 700; font-size: 1.05rem; }
   .plan .price { font-family: Fraunces, serif; font-size: 2.3rem; margin: 10px 0 2px; }
   .plan .price small { font-family: Inter, sans-serif; font-size: 0.85rem; color: var(--muted); font-weight: 500; }
@@ -398,7 +398,7 @@
       <ul><li>Everything in Pro</li><li>30 application packages a month</li><li>Digest mode and priority processing</li><li>Application history and exports</li></ul>
       <a class="btn btn-ghost" href="#invite">Request an invite</a></div>
     <div class="plan"><div class="name">Bring your own key</div><div class="price">$4<small> / month · free in the beta</small></div><div class="for">Use your own OpenAI key; pay only for the platform.</div>
-      <ul><li>Everything in Pro Plus</li><li>AI usage billed by OpenAI to you</li><li>Full control of models and spend</li><li>What every beta member has today</li></ul>
+      <ul><li>Everything in Pro Plus</li><li>AI usage billed by OpenAI to you</li><li>Set your own spending limits on your OpenAI account</li><li>What every beta member has today</li></ul>
       <a class="btn btn-ghost" href="#invite">Request an invite</a></div>
   </div>
   <div class="addons">
@@ -415,7 +415,7 @@
   <details><summary>What does a search cost me in OpenAI usage?</summary><p>You paste an OpenAI API key in your account and pay OpenAI directly. A search that evaluates 50 new postings typically costs 1 to 3 US dollars; later searches cost less because stored postings are not re-evaluated. Drafting one application is usually under a dollar. You can cap evaluations per search and remove the key at any time.</p></details>
   <details><summary>Which countries and languages does it cover?</summary><p>Any country: sources are global and you set your preferred locations, from "Ethiopia" to "Remote" to "Africa". Postings in English are matched best; other languages work when the posting and your CV facts share a language. The assistant and dashboard are in English.</p></details>
   <details><summary>Is the match score a hiring probability?</summary><p>No. It is a relevance score between the posting's requirements and your verified facts. Mandatory eligibility is tracked separately and shown as met, unknown or not met.</p></details>
-  <details><summary>What happens to my data?</summary><p>Your CV text, verified facts, postings, evaluations and drafts stay in your private workspace. The owner of the service sees only account-level activity to improve the beta. You can remove connections at any time and ask for full deletion. See the <a href="/privacy.html">privacy notice</a>.</p></details>
+  <details><summary>What happens to my data?</summary><p>Your CV text, verified facts, postings, evaluations and drafts are visible only in your workspace. They are stored on a server the owner administers; running the service, the owner looks only at account-level activity such as whether a CV was verified, not at your documents. API keys and mailbox passwords are stored encrypted. You can remove connections at any time and ask for export or full deletion. See the <a href="/privacy.html">privacy notice</a>.</p></details>
 </section>
 
 <section class="wrap reveal" id="invite">

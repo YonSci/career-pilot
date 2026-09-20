@@ -310,6 +310,8 @@ def _run_scan(run_id):
             result.setdefault("warnings", []).append(
                 "No OpenAI API key on this account: postings are ranked by keyword overlap only. Add a key under Account for requirement-level evaluation."
             )
+        started_at = datetime.now(timezone.utc)
+        deadline = started_at + timedelta(minutes=settings.scan_time_budget_minutes)
         known_urls = {r.data.get("url") for r in rows(db, "job") if r.data.get("url")}
         seen_mail = {r.data["id"] for r in rows(db, "mail")}
         ctx = Context(known_urls=known_urls, seen_mail=seen_mail)
@@ -317,6 +319,9 @@ def _run_scan(run_id):
             if not source.data.get("enabled"):
                 continue
             label = source.data["kind"] + (": " + source.data["value"] if source.data.get("value") else "")
+            if datetime.now(timezone.utc) > deadline:
+                result["sources"].append({"name": label, "status": "deferred", "error": "Skipped: the search's time budget was used up; this source runs first next time."})
+                continue
             result["progress"] = "Reading " + label
             put(db, "run", run.key, result)
             fetched_before = ctx.pages_fetched

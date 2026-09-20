@@ -133,6 +133,88 @@ def test_password_reset_and_change_invalidate_other_sessions(client):
     assert b.get("/api/state").status_code == 401, "other sessions are signed out"
 
 
+def test_gzip_pages_are_decoded_once(monkeypatch):
+    import gzip
+
+    body = b"<html><main>Hydrology role with Python and GIS in Ethiopia</main></html>"
+
+    def handler(request):
+        return httpx.Response(200, headers={"content-type": "text/html", "content-encoding": "gzip"}, content=gzip.compress(body))
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    r = sources.safe_get(client, "https://example.org/gz")
+    assert "content-encoding" not in {k.lower() for k in r.headers}
+    assert "Hydrology role" in r.text
+    assert sources.Context(delay=0).fetch_page(client, "https://example.org/gz").startswith("Hydrology")
+
+
+def test_imap_hosts_follow_the_destination_policy(monkeypatch):
+    with pytest.raises(ValueError):
+        sources.public_host("127.0.0.1")
+    with pytest.raises(ValueError):
+        sources.public_host("mail.internal")
+    monkeypatch.setattr(sources, "resolve_host", lambda host: ["10.0.0.9"])
+    with pytest.raises(ValueError, match="private"):
+        sources.imap_check({"host": "imap.example.org", "username": "u", "password": "p"})
+    monkeypatch.setattr(sources, "resolve_host", lambda host: ["93.184.216.34"])
+    assert sources.public_host("imap.example.org") == "93.184.216.34"
+
+
+def test_imap_connection_is_pinned_to_the_validated_address(monkeypatch):
+    seen = {}
+
+    class FakeBox:
+        def __init__(self, host, port, timeout=None):
+            seen.update(host=host, port=port, timeout=timeout)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def login(self, u, p):
+            return "OK", []
+
+        def select(self, folder, readonly=True):
+            return "OK", [b"5"]
+
+    monkeypatch.setattr(sources.imaplib, "IMAP4_SSL", FakeBox)
+    assert sources.imap_check({"host": "imap.example.org", "username": "u", "password": "p", "folder": "CareerPilot"}) == 5
+    assert seen == {"host": "imap.example.org", "port": 993, "timeout": sources.IMAP_TIMEOUT}
+    # The pinned subclass overrides socket creation with the validated address.
+    box = sources.imap_connect("imap.example.org", 993)
+    assert type(box).__name__ == "PinnedIMAP4_SSL" and "_create_socket" in type(box).__dict__
+
+
+def test_pro_plus_can_be_assigned(client):
+    member = signup_member(client)
+    me = member.get("/api/auth/me").json()
+    r = client.put(f"/api/admin/users/{me['id']}", json={"plan": "pro_plus"})
+    assert r.status_code == 200 and r.json()["plan"] == "pro_plus"
+    assert member.get("/api/state").json()["plan"]["packages_per_month"] == 30
+
+
+def test_alert_resend_only_for_unknown_delivery(client, monkeypatch):
+    verified_profile(client)
+    job = client.post("/api/jobs", json=JOB).json()
+    from career.db import Session, put
+    from tests.conftest import OWNER
+
+    with Session() as db:
+        owner = db.query(User).filter_by(email=OWNER["email"]).one()
+        put(db, "job", "job:x", {**JOB, "status": "new", "match": {"score": 90, "mode": "ai", "summary": "s", "requirements": [], "strengths": [], "gaps": []}}, user_id=owner.id)
+        row = put(db, "alert", f"alert:{job['id']}:telegram", {"job_id": job["id"], "channel": "telegram", "status": "accepted"}, user_id=owner.id)
+        unknown = put(db, "alert", f"alert:{job['id']}:email", {"job_id": job["id"], "channel": "email", "status": "delivery_unknown"}, user_id=owner.id)
+        ok_id, unknown_id = row.id, unknown.id
+    assert client.post(f"/api/alerts/{ok_id}/resend").status_code == 422
+    client.post(f"/api/jobs/{job['id']}/match")  # keyword match so the job has an evaluation
+    sent = []
+    monkeypatch.setattr("career.notifications.send_alert", lambda *a, **k: sent.append(a))
+    r = client.post(f"/api/alerts/{unknown_id}/resend")
+    assert r.status_code == 200 and r.json()["status"] == "accepted" and len(sent) == 1
+
+
 def test_first_account_requires_setup_code_or_owner_email(monkeypatch):
     from fastapi.testclient import TestClient
     from career.main import app
@@ -150,8 +232,10 @@ def test_first_account_requires_setup_code_or_owner_email(monkeypatch):
     with TestClient(app) as anon:
         reset_database()
         monkeypatch.setattr(settings, "owner_email", "owner@example.org")
+        # The email restriction never replaces the setup code.
+        assert anon.post("/api/auth/signup", json={"email": "Owner@Example.org", "password": "long-enough-pw"}, headers=CSRF).status_code == 422
         assert anon.post("/api/auth/signup", json={"email": "other@example.org", "password": "long-enough-pw", "invite": settings.app_token}, headers=CSRF).status_code == 422
-        assert anon.post("/api/auth/signup", json={"email": "Owner@Example.org", "password": "long-enough-pw"}, headers=CSRF).status_code == 200
+        assert anon.post("/api/auth/signup", json={"email": "Owner@Example.org", "password": "long-enough-pw", "invite": settings.app_token}, headers=CSRF).status_code == 200
 
 
 def test_imap_connections_have_a_timeout(monkeypatch):

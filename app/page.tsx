@@ -404,7 +404,7 @@ function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_
                   <span className="field-help">The beta is invitation-only. Use the code you received.</span>
                 </label>
               )}
-              {mode === "signup" && setup.needs_first_account && !setup.owner_email_fixed && (
+              {mode === "signup" && setup.needs_first_account && (
                 <label className="field">
                   Setup code
                   <input required type="password" autoComplete="off" value={invite} onChange={(e) => setInvite(e.target.value)} />
@@ -2010,6 +2010,26 @@ export default function Home() {
                   </a>
                 )}
               </div>
+              {s.alerts.filter((a) => a.job_id === job.id && a.channel !== "inapp").length > 0 && (
+                <p className="field-help">
+                  Alerts:{" "}
+                  {s.alerts
+                    .filter((a) => a.job_id === job.id && a.channel !== "inapp")
+                    .map((a) => (
+                      <span key={a.id}>
+                        {a.channel} {a.status.replace("_", " ")}
+                        {["delivery_unknown", "failed"].includes(a.status) && (
+                          <>
+                            {" "}
+                            <button className="text-button" disabled={!!busy} onClick={() => act("resend", () => call(`/alerts/${a.id}/resend`, "POST"), "Alert resent")}>
+                              Resend
+                            </button>
+                          </>
+                        )}{" "}
+                      </span>
+                    ))}
+                </p>
+              )}
               <p className="posting-text">{job.description ?? job.description_preview ?? "Loading…"}</p>
               <div className="detail-bottom">
                 <span>

@@ -203,12 +203,12 @@ def register(db, email, password, name="", invite=None):
     first = db.query(User).count() == 0
     invite_row = None
     if first:
-        # The first account becomes the owner: require proof of deployment access.
-        if settings.owner_email:
-            if email != settings.owner_email.strip().lower():
-                raise ValueError("The owner account must use the configured owner email address.")
-        elif not (invite and hmac.compare_digest(invite.strip(), settings.app_token)):
+        # The first account becomes the owner: always require proof of deployment
+        # access (the setup code); OWNER_EMAIL additionally restricts the address.
+        if not (invite and hmac.compare_digest(invite.strip(), settings.app_token)):
             raise ValueError("Enter the setup code (the server's APP_TOKEN) to create the owner account.")
+        if settings.owner_email and email != settings.owner_email.strip().lower():
+            raise ValueError("The owner account must use the configured owner email address.")
     if not first and settings.invite_only:
         code = (invite or "").strip()
         invite_row = db.query(Record).filter_by(user_id=SYSTEM, key="invite:" + code).first() if code else None
