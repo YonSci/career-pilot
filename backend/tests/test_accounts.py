@@ -174,3 +174,10 @@ def test_waitlist_is_public_and_visible_to_owner(client):
     overview = client.get("/api/admin/overview").json()
     assert [w["email"] for w in overview["waitlist"]] == ["lead@example.org"]
     assert overview["waitlist"][0]["note"] == "updated" and overview["waitlist"][0]["name"] == "Lead"
+
+
+def test_setup_exposes_analytics_only_when_configured(client, monkeypatch):
+    assert client.get("/api/setup").json()["analytics"] is None
+    monkeypatch.setattr(settings, "posthog_key", "phc_test")
+    a = client.get("/api/setup").json()["analytics"]
+    assert a == {"provider": "posthog", "key": "phc_test", "host": "https://eu.i.posthog.com", "replay": True}

@@ -47,6 +47,12 @@ services:
         sync: false
       - key: RELIEFWEB_APPNAME
         sync: false
+      - key: POSTHOG_KEY
+        sync: false          # PostHog project API key (public); empty disables analytics and replay
+      - key: POSTHOG_HOST
+        value: https://eu.i.posthog.com
+      - key: POSTHOG_REPLAY
+        value: "true"
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

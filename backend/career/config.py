@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     whatsapp_to: str = ""
     whatsapp_content_sid: str = ""
     reliefweb_appname: str = ""
+    # Product analytics, session replay and error tracking (PostHog). Empty = off.
+    posthog_key: str = ""
+    posthog_host: str = "https://eu.i.posthog.com"
+    posthog_replay: bool = True
 
     @property
     def public_https(self) -> bool:

@@ -460,6 +460,29 @@
   document.getElementById("year").textContent = new Date().getFullYear();
   const H = { "Content-Type": "application/json", "X-Requested-With": "CareerPilot" };
 
+  // Analytics and session replay (PostHog), only when the server has a project key.
+  // Inputs are masked and personal text hidden; visitors are anonymous.
+  const track = (e, p) => { try { window.posthog && window.posthog.capture(e, p || {}); } catch {} };
+  fetch("/api/setup").then((r) => r.json()).then((s) => {
+    const a = s.analytics;
+    if (!a || a.provider !== "posthog" || !a.key) return;
+    const q = []; const stub = { _i: q };
+    ["init", "capture", "identify", "reset", "captureException", "register"].forEach((m) => { stub[m] = (...args) => q.push([m, args]); });
+    window.posthog = stub;
+    const sc = document.createElement("script"); sc.async = true; sc.src = a.host.replace(/\/$/, "") + "/static/array.js";
+    sc.onload = () => {
+      const real = window.posthog; if (!real || real === stub) return;
+      real.init(a.key, { api_host: a.host, person_profiles: "identified_only", capture_pageview: true, capture_pageleave: true, autocapture: true, capture_dead_clicks: true, capture_exceptions: true, respect_dnt: true, disable_session_recording: !a.replay,
+        session_recording: { maskAllInputs: true, maskTextSelector: "[data-ph-mask], .cp-msg" } });
+      q.forEach(([m, args]) => { if (typeof real[m] === "function") real[m](...args); });
+      real.capture("landing_page_viewed", { referrer: document.referrer || "", has_invite_param: new URLSearchParams(location.search).has("invite") });
+    };
+    document.head.appendChild(sc);
+  }).catch(() => {});
+  document.querySelectorAll('a[href="/app/"]').forEach((a) => a.addEventListener("click", () => track("signin_link_clicked", { location: a.closest("nav") ? "nav" : "page" })));
+  document.querySelectorAll('a[href="#invite"]').forEach((a) => a.addEventListener("click", () => track("invite_cta_clicked", { location: a.closest("nav") ? "nav" : a.closest(".plan") ? "pricing" : "page" })));
+  document.querySelectorAll('a[href="#pricing"], a[href="#features"], a[href="#how"], a[href="#faq"]').forEach((a) => a.addEventListener("click", () => track("landing_section_clicked", { section: a.getAttribute("href").slice(1) })));
+
   // Reveal on scroll
   const io = new IntersectionObserver((entries) => entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { threshold: 0.12 });
   document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
@@ -483,6 +506,7 @@
 
   // Tabs in the product frame
   document.querySelectorAll(".frame-bar .tabs button").forEach((b) => b.addEventListener("click", () => {
+    track("preview_tab_clicked", { tab: b.dataset.tab });
     document.querySelectorAll(".frame-bar .tabs button").forEach((x) => x.classList.toggle("on", x === b));
     document.querySelectorAll(".frame-body [data-panel]").forEach((p) => p.classList.toggle("on", p.dataset.panel === b.dataset.tab));
   }));
@@ -491,7 +515,8 @@
   const submitInvite = async (data) => {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email || "")) throw new Error("Enter a valid email address.");
     const r = await fetch("/api/waitlist", { method: "POST", headers: H, body: JSON.stringify(data) });
-    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.detail || "Something went wrong."); }
+    if (!r.ok) { const j = await r.json().catch(() => ({})); track("invite_request_failed", { status: r.status }); throw new Error(j.detail || "Something went wrong."); }
+    track("invite_requested", { with_note: !!(data.note && data.note.trim()), with_name: !!(data.name && data.name.trim()) });
   };
   const mini = document.getElementById("mini"), miniMsg = document.getElementById("mini-msg");
   mini.addEventListener("submit", async (e) => {
@@ -518,6 +543,7 @@
     q = (q || "").trim(); if (!q || busy) return;
     chips.remove();
     history.push({ role: "user", content: q }); add("user", q); text.value = ""; busy = true;
+    track("assistant_question_asked", { turns: history.length, signed_in: false });
     const thinking = add("assistant", "Thinking…");
     try {
       const r = await fetch("/api/assistant/chat", { method: "POST", headers: H, body: JSON.stringify({ messages: history.slice(-16) }) });

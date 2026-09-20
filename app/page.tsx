@@ -128,6 +128,7 @@ type Run = {
   id: string;
   status: string;
   created: string;
+  completed?: string;
   trigger?: string;
   added?: number;
   matched?: number;
@@ -322,6 +323,66 @@ const date = (v: string | null | undefined, empty = "Deadline not listed") =>
 const link = (v: string) => (/^https?:\/\//i.test(v) ? v : undefined);
 const PAGE = 30;
 const HEADERS = { "X-Requested-With": "CareerPilot" };
+type Analytics = { provider: string; key: string; host: string; replay: boolean } | null;
+type PostHog = {
+  init: (key: string, options: Record<string, unknown>) => void;
+  capture: (event: string, props?: Record<string, unknown>) => void;
+  identify: (id: string, props?: Record<string, unknown>) => void;
+  reset: () => void;
+  captureException?: (error: unknown, props?: Record<string, unknown>) => void;
+  __loaded?: boolean;
+};
+const ph = (): PostHog | undefined => (window as unknown as { posthog?: PostHog }).posthog;
+// Session replay with every input masked and all personal text hidden; people
+// are identified by their anonymous account ID, never by email.
+function startAnalytics(config: Analytics) {
+  if (!config || config.provider !== "posthog" || !config.key || ph()?.__loaded) return;
+  const w = window as unknown as Record<string, unknown>;
+  const stub: Record<string, unknown> & { _i: unknown[] } = { _i: [] };
+  const methods = ["init", "capture", "identify", "reset", "captureException", "register", "opt_out_capturing", "get_distinct_id"];
+  methods.forEach((m) => {
+    stub[m] = (...args: unknown[]) => (stub._i as unknown[]).push([m, args]);
+  });
+  w.posthog = stub;
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = config.host.replace(/\/$/, "") + "/static/array.js";
+  script.onload = () => {
+    const real = ph();
+    if (!real) return;
+    real.init(config.key, {
+      api_host: config.host,
+      person_profiles: "identified_only",
+      capture_pageview: true,
+      capture_pageleave: true,
+      autocapture: true,
+      capture_dead_clicks: true,
+      capture_exceptions: true,
+      respect_dnt: true,
+      disable_session_recording: !config.replay,
+      session_recording: {
+        maskAllInputs: true,
+        maskTextSelector: "[data-ph-mask], .fact, .posting-text, .assistant-msg, .package-dialog textarea, .package-dialog h3, .job-title, .company-name, .avatar, .admin-table td, details p",
+        blockSelector: "[data-ph-block]",
+      },
+    });
+    (stub._i as [string, unknown[]][]).forEach(([m, args]) => {
+      const fn = (real as unknown as Record<string, (...a: unknown[]) => void>)[m];
+      if (typeof fn === "function") fn.apply(real, args);
+    });
+  };
+  document.head.appendChild(script);
+}
+const track = (event: string, props?: Record<string, unknown>) => {
+  try {
+    ph()?.capture(event, props);
+  } catch {}
+};
+const trackError = (error: unknown, props?: Record<string, unknown>) => {
+  try {
+    ph()?.captureException?.(error, props);
+  } catch {}
+};
 async function call<T = Record<string, unknown>>(path: string, method = "GET", body?: unknown): Promise<T> {
   const form = body instanceof FormData;
   const r = await fetch("/api" + path, {
@@ -341,6 +402,10 @@ async function call<T = Record<string, unknown>>(path: string, method = "GET", b
     } catch {}
     const err = new Error(m) as Error & { status?: number };
     err.status = r.status;
+    if (r.status !== 401) {
+      track("api_error", { path: path.replace(/\/[0-9a-f]{32}/g, "/:id"), method, status: r.status, message: m });
+      if (r.status >= 500) trackError(err, { path: path.replace(/\/[0-9a-f]{32}/g, "/:id"), status: r.status });
+    }
     throw err;
   }
   return r.json() as Promise<T>;
@@ -353,14 +418,19 @@ function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_
     [invite, setInvite] = useState(new URLSearchParams(window.location.search).get("invite") ?? ""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  useEffect(() => {
+    track(mode === "signup" ? "signup_started" : "login_started", { first_account: setup.needs_first_account });
+  }, [mode, setup.needs_first_account]);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError("");
     try {
       await call("/auth/" + mode, "POST", { email, password, name, invite });
+      track(mode === "signup" ? "signup_completed" : "login_completed", { with_invite: !!invite && !setup.needs_first_account });
       onDone();
     } catch (err) {
+      track(mode === "signup" ? "signup_failed" : "login_failed", { message: err instanceof Error ? err.message : "" });
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setBusy(false);
@@ -457,6 +527,7 @@ function Assistant() {
     setMessages(next);
     setInput("");
     setBusy(true);
+    track("assistant_question_asked", { turns: next.length, suggested: suggestions.includes(q) });
     try {
       const r = await call<{ reply: string }>("/assistant/chat", "POST", { messages: next.slice(-16) });
       setMessages([...next, { role: "assistant", content: r.reply }]);
@@ -556,13 +627,18 @@ export default function Home() {
   }, []);
   const boot = useCallback(async () => {
     try {
-      setSetup(await call("/setup"));
+      const s = await call<{ app_name: string; needs_first_account: boolean; invite_only: boolean; owner_email_fixed?: boolean; analytics?: Analytics }>("/setup");
+      setSetup(s);
+      startAnalytics(s.analytics ?? null);
     } catch {}
     try {
       const d = await refresh();
       setProfile(d.profile);
       setPrefs({ ...defaults, ...d.preferences });
       setAccountName(d.user.name);
+      try {
+        ph()?.identify(d.user.id, { plan: d.user.plan, role: d.user.role, has_key: d.connections.ai, sources: d.sources.length, verified_facts: d.profile.facts.filter((f) => f.verified).length });
+      } catch {}
     } catch (e) {
       setSignedIn(false);
     }
@@ -579,12 +655,29 @@ export default function Home() {
     const id = new URLSearchParams(window.location.search).get("job");
     if (id) setSelected(id);
   }, []);
+  const [seenRun, setSeenRun] = useState<{ id: string; status: string } | null>(null);
+  useEffect(() => {
+    const r = s.runs[0];
+    if (!r) return;
+    if (seenRun && seenRun.id === r.id && seenRun.status === r.status) return;
+    if (seenRun && seenRun.id === r.id && ["queued", "running"].includes(seenRun.status) && !["queued", "running"].includes(r.status)) {
+      const seconds = r.completed ? Math.round((new Date(r.completed).getTime() - new Date(r.created).getTime()) / 1000) : undefined;
+      if (r.status === "completed") {
+        track("job_search_completed", { seconds, added: r.added ?? 0, matched: r.matched ?? 0, alerts: r.alerts ?? 0, failed_sources: (r.sources ?? []).filter((x) => x.status === "failed").length, warnings: (r.warnings ?? []).length, trigger: r.trigger });
+      } else {
+        track("job_search_failed", { seconds, status: r.status, error: r.error, trigger: r.trigger });
+      }
+    }
+    setSeenRun({ id: r.id, status: r.status });
+  }, [s.runs, seenRun]);
   useEffect(() => {
     if (!selected || !signedIn) {
       setDetail(null);
       return;
     }
     let live = true;
+    const opened = s.jobs.find((j) => j.id === selected);
+    track("job_result_opened", { score: opened?.match?.score ?? null, source: opened?.source, unread: unreadIds.has(selected) });
     call<Job>(`/jobs/${selected}`)
       .then((d) => {
         if (live) setDetail(d);
@@ -671,11 +764,19 @@ export default function Home() {
   const jobs = visible.slice(0, limit);
   const job = detail && detail.id === selected ? detail : s.jobs.find((j) => j.id === selected) ?? null;
   const decide = (j: Job, status: string) =>
-    act("decision", () => call(`/jobs/${j.id}/decision`, "PUT", { status }), "Job updated");
+    act(
+      "decision",
+      async () => {
+        track(status === "saved" ? "job_saved" : status === "skipped" ? "job_skipped" : status === "applied" ? "job_marked_applied" : "job_status_changed", { score: j.match?.score ?? null, source: j.source });
+        await call(`/jobs/${j.id}/decision`, "PUT", { status });
+      },
+      "Job updated",
+    );
   const prepare = (j: Job) =>
     act(
       "prepare",
       async () => {
+        track("application_created", { score: j.match?.score ?? null, source: j.source, packages_used: s.plan.packages_used });
         await call(`/jobs/${j.id}/prepare`, "POST");
         setSelected(null);
         setTab("applications");
@@ -685,12 +786,22 @@ export default function Home() {
   const upload = async (file: File) => {
     const body = new FormData();
     body.append("file", file);
-    await act("upload", async () => setProfile(await call<Profile>("/profile/upload", "POST", body)), "Imported. Review and verify your evidence.");
+    await act(
+      "upload",
+      async () => {
+        const started = Date.now();
+        const p = await call<Profile>("/profile/upload", "POST", body);
+        setProfile(p);
+        track("cv_uploaded", { method: "file", facts: p.facts.length, seconds: Math.round((Date.now() - started) / 1000), size_kb: Math.round(file.size / 1024) });
+      },
+      "Imported. Review and verify your evidence.",
+    );
   };
   const download = async (a: App) => {
     try {
       const r = await fetch(`/api/applications/${a.id}/download`, { credentials: "same-origin", headers: HEADERS });
       if (!r.ok) throw new Error("Documents are not ready to download.");
+      track("application_exported", {});
       const url = URL.createObjectURL(await r.blob()),
         el = document.createElement("a");
       el.href = url;
@@ -718,6 +829,7 @@ export default function Home() {
     act(
       "source",
       async () => {
+        track("job_source_selected", { kind, suggested: s.suggested_sources.some((x) => x.kind === kind && x.value === value) });
         await call("/sources", "POST", { kind, value, enabled: true });
         setSourceValue("");
         setSourceTest(null);
@@ -726,6 +838,7 @@ export default function Home() {
     );
   const testSource = () =>
     act("test-source", async () => {
+      track("job_source_tested", { kind: sourceKind });
       setSourceTest(null);
       setSourceTest(
         await call<{ received: number; sample: { title: string; company: string; location: string; url: string }[] }>("/sources/test", "POST", { kind: sourceKind, value: sourceValue, enabled: true }),
@@ -734,6 +847,10 @@ export default function Home() {
   const signOut = () =>
     act("logout", async () => {
       await call("/auth/logout", "POST");
+      track("logout", {});
+      try {
+        ph()?.reset();
+      } catch {}
       setSignedIn(false);
       setS(initial);
       window.location.href = "/";
@@ -834,7 +951,16 @@ export default function Home() {
                 <button
                   className="button primary"
                   disabled={!!busy || active}
-                  onClick={() => act("scan", () => call("/scan", "POST"), "Search started")}
+                  onClick={() =>
+                    act(
+                      "scan",
+                      async () => {
+                        track("job_search_started", { sources: s.sources.filter((x) => x.enabled).length, has_key: s.connections.ai, verified_facts: verified });
+                        await call("/scan", "POST");
+                      },
+                      "Search started",
+                    )
+                  }
                 >
                   {active ? <LoaderCircle className="spin" size={17} /> : <RefreshCw size={17} />}{" "}
                   {active ? "Searching…" : "Run search"}
@@ -1134,7 +1260,9 @@ export default function Home() {
                     act(
                       "import",
                       async () => {
-                        setProfile(await call<Profile>("/profile/text", "POST", { text: cvText }));
+                        const p = await call<Profile>("/profile/text", "POST", { text: cvText });
+                        setProfile(p);
+                        track("cv_uploaded", { method: "text", facts: p.facts.length });
                         setCvText("");
                       },
                       "Imported. Verify the facts below.",
@@ -1203,7 +1331,21 @@ export default function Home() {
               {profile.facts.length > 0 && (
                 <div className="sticky-save">
                   <span className={evidenceDirty ? "danger-text" : "muted-text"}>{evidenceDirty ? "Unsaved changes" : "All changes saved"}</span>
-                  <button className="button primary" disabled={!!busy || !evidenceDirty} onClick={() => act("profile", () => call("/profile", "PUT", profile), "Evidence saved")}>
+                  <button
+                    className="button primary"
+                    disabled={!!busy || !evidenceDirty}
+                    onClick={() =>
+                      act(
+                        "profile",
+                        async () => {
+                          await call("/profile", "PUT", profile);
+                          const v = profile.facts.filter((f) => f.verified).length;
+                          if (v > 0) track("profile_completed", { verified_facts: v, total_facts: profile.facts.length });
+                        },
+                        "Evidence saved",
+                      )
+                    }
+                  >
                     Save evidence
                   </button>
                 </div>
@@ -1644,7 +1786,10 @@ export default function Home() {
                       ) : (
                         <p className="field-help">Link your own Telegram account to receive alerts with Interested / Skip buttons.</p>
                       )}
-                      <button className="button primary" disabled={!!busy} onClick={() => act("link", async () => setLinkCode(await call<{ code: string; bot_username: string }>("/telegram/link", "POST")))}>
+                      <button className="button primary" disabled={!!busy} onClick={() => act("link", async () => {
+                            track("telegram_link_started", {});
+                            setLinkCode(await call<{ code: string; bot_username: string }>("/telegram/link", "POST"));
+                          })}>
                         <Link2 size={17} /> {linkCode ? "New code" : "Link Telegram"}
                       </button>
                     </>
@@ -1653,7 +1798,7 @@ export default function Home() {
                 <section className="panel">
                   <h2>Profile and password</h2>
                   <p className="field-help">
-                    Signed in as <strong>{s.user.email}</strong> · {s.plan.label} plan{isAdmin ? " · owner" : ""}
+                    Signed in as <strong data-ph-mask>{s.user.email}</strong> · {s.plan.label} plan{isAdmin ? " · owner" : ""}
                   </p>
                   <label className="field">
                     Display name
@@ -1955,7 +2100,22 @@ export default function Home() {
                   <FileText size={17} />
                   Prepare application
                 </button>
-                <button className="button secondary" disabled={!!busy} onClick={() => act("match", () => call(`/jobs/${job.id}/match`, "POST"), "Match updated")}>
+                <button
+                  className="button secondary"
+                  disabled={!!busy}
+                  onClick={() =>
+                    act(
+                      "match",
+                      async () => {
+                        const started = Date.now();
+                        track("match_analysis_started", { source: job.source, reevaluate: !!job.match });
+                        const r = await call<Job>(`/jobs/${job.id}/match`, "POST");
+                        track("match_analysis_completed", { seconds: Math.round((Date.now() - started) / 1000), score: r.match?.score ?? null, mode: r.match?.mode });
+                      },
+                      "Match updated",
+                    )
+                  }
+                >
                   {busy === "match" ? <LoaderCircle className="spin" size={17} /> : <Search size={17} />}
                   {job.match ? "Re-evaluate match" : "Evaluate match"}
                 </button>
@@ -2175,6 +2335,7 @@ export default function Home() {
                       "ready",
                       async () => {
                         await call("/applications/" + editing.id, "PUT", { package: draft, status: "ready" });
+                        track("application_ready", {});
                         setEditing(null);
                       },
                       "Marked ready. Nothing has been submitted.",

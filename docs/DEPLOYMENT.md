@@ -62,3 +62,24 @@ Deleting the service or the disk deletes all accounts' data.
 ## Alternative: Vercel for the dashboard
 
 Not needed for the beta: the API serves the dashboard and sessions are same-origin cookies, which keeps CSRF simple. If the dashboard moves to Vercel later, the API must issue `SameSite=None; Secure` cookies and allow the Vercel origin in `CORS_ORIGINS`.
+
+
+## Analytics and session replay (PostHog)
+
+Set `POSTHOG_KEY` (the project API key from PostHog → Project settings) on the service; `POSTHOG_HOST` defaults to the EU cloud and `POSTHOG_REPLAY=false` turns replay off while keeping events. Nothing is loaded in the browser until the key is set. The privacy notice already describes the recording and masking.
+
+What is captured: page views, autocaptured clicks, dead clicks, JavaScript exceptions and API errors (`api_error` with path, method and status), and these product events:
+
+| Stage | Events |
+|---|---|
+| Landing | `landing_page_viewed`, `landing_section_clicked`, `preview_tab_clicked`, `invite_cta_clicked`, `invite_requested`, `invite_request_failed`, `signin_link_clicked` |
+| Accounts | `signup_started`, `signup_completed`, `signup_failed`, `login_started`, `login_completed`, `login_failed`, `logout` |
+| Evidence | `cv_uploaded` (method, facts, seconds), `profile_completed` (verified_facts) |
+| Sources | `job_source_selected` (kind, suggested), `job_source_tested` |
+| Search | `job_search_started`, `job_search_completed` (seconds, added, matched, alerts, failed_sources), `job_search_failed` |
+| Matching | `match_analysis_started`, `match_analysis_completed` (seconds, score) |
+| Jobs | `job_result_opened` (score, source, unread), `job_saved`, `job_skipped`, `job_marked_applied` |
+| Applications | `application_created`, `application_ready`, `application_exported` |
+| Other | `telegram_link_started`, `assistant_question_asked` |
+
+Suggested funnel in PostHog: `landing_page_viewed` → `signup_completed` → `profile_completed` → `job_search_completed` → `job_result_opened` → `job_saved` → `application_created`. Members are identified by their account ID with plan, role, `has_key`, `sources` and `verified_facts` as person properties; no email or name is sent. Session replay masks all inputs and hides evidence, postings, drafts, names, emails and assistant text.

@@ -56,6 +56,9 @@ Career Pilot is a personal job-search assistant for careers in data science, AI,
 - Password: change it under Account. If forgotten, the owner can issue a temporary password.
 - Scheduled searches run on the server at the chosen interval even when the user is offline (Beta, Pro and Pro Plus plans).
 
+# Analytics
+- The service may use PostHog (EU) for usage analytics, error reports and session replay to find usability problems. Inputs are masked, personal and career text is hidden, members are identified by a random account ID only, and "Do Not Track" browsers are excluded. Details are in the privacy notice at /privacy.html.
+
 # Troubleshooting
 - "Add your AI key": the account has no OpenAI key; add it under Account.
 - A source shows "failed" in Job sources → Search activity: check the identifier or URL, use Test source; ReliefWeb occasionally drops connections and is retried automatically.

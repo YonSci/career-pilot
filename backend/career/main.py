@@ -64,7 +64,7 @@ async def lifespan(app):
         scheduler.shutdown()
 
 
-VERSION = "0.3.5"
+VERSION = "0.3.6"
 app = FastAPI(title=settings.app_name, version=VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -170,6 +170,11 @@ def setup(db=Depends(db_session)):
         "needs_first_account": db.query(User).count() == 0,
         "invite_only": settings.invite_only,
         "owner_email_fixed": bool(settings.owner_email),
+        "analytics": (
+            {"provider": "posthog", "key": settings.posthog_key, "host": settings.posthog_host, "replay": settings.posthog_replay}
+            if settings.posthog_key
+            else None
+        ),
     }
 
 
