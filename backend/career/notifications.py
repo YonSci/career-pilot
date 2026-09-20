@@ -1,4 +1,5 @@
 import json
+import logging
 import ssl
 import smtplib
 from email.message import EmailMessage
@@ -10,6 +11,7 @@ from .db import Record, put, read, now, current_user, current_user_id
 from .ai import ai_available
 
 INAPP = "inapp"
+log = logging.getLogger(__name__)
 
 
 def is_owner():
@@ -204,8 +206,9 @@ def notify(db, job_id, job, match, channels):
         try:
             send_alert(channel, job, match, job_id, chat_id)
             status = "accepted"
-        except Exception:
+        except Exception as e:
             # An HTTP timeout may occur after provider acceptance. Never auto-resend.
+            log.warning("Alert via %s not confirmed for job %s: %s: %s", channel, job_id, type(e).__name__, str(e)[:200])
             status = "delivery_unknown"
         put(db, "alert", row.key, {**row.data, "status": status})
         results[channel] = status
@@ -240,7 +243,8 @@ def notify_digest(db, entries, channels):
             elif channel == "telegram":
                 telegram_send(chat_id, text)
             status = "accepted"
-        except Exception:
+        except Exception as e:
+            log.warning("Digest via %s not confirmed: %s: %s", channel, type(e).__name__, str(e)[:200])
             status = "delivery_unknown"
         for row, _ in fresh:
             put(db, "alert", row.key, {**row.data, "status": status})
