@@ -1,0 +1,14 @@
+node_modules
+dist
+.git
+.env
+.env.local
+.sites-runtime
+.wrangler
+data
+backend/data
+**/__pycache__
+**/.pytest_cache
+**/.venv
+client_secret*.json
+data

@@ -1,0 +1,77 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://career:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/career
+      REDIS_URL: redis://redis:6379/0
+      TASK_QUEUE: celery
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - career_files:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: celery -A career.tasks:celery worker --loglevel=warning --concurrency=1
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://career:${POSTGRES_PASSWORD}@db:5432/career
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - career_files:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+  scheduler:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: celery -A career.tasks:celery beat --loglevel=warning --schedule=/app/data/celerybeat-schedule
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://career:${POSTGRES_PASSWORD}@db:5432/career
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - career_files:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: career
+      POSTGRES_USER: career
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - career_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U career"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - career_queue:/data
+    restart: unless-stopped
+volumes:
+  career_db:
+  career_files:
+  career_queue:

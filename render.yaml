@@ -1,0 +1,59 @@
+# Render Blueprint: one always-on web service with a persistent disk.
+# The API, dashboard, in-process scheduler and Telegram poller run in this
+# single instance; SQLite lives on the disk. Scale to Postgres + worker later.
+services:
+  - type: web
+    name: career-pilot
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    plan: starter            # free instances sleep, which stops scheduled searches
+    region: frankfurt
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: career-data
+      mountPath: /app/data
+      sizeGB: 2
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite:////app/data/career.db
+      - key: DATA_DIR
+        value: /app/data
+      - key: TASK_QUEUE
+        value: background
+      - key: SCHEDULER_ENABLED
+        value: "true"
+      - key: INVITE_ONLY
+        value: "true"
+      - key: APP_NAME
+        value: Career Pilot
+      - key: PUBLIC_URL
+        sync: false          # https://<service>.onrender.com or your custom domain
+      - key: CORS_ORIGINS
+        sync: false          # same value as PUBLIC_URL
+      - key: APP_TOKEN
+        generateValue: true
+      - key: SECRET_KEY
+        generateValue: true  # encrypts users' stored API keys and mailbox passwords; never rotate casually
+      - key: OPENAI_API_KEY
+        sync: false          # owner account only; members bring their own keys
+      - key: EXTRACT_MODEL
+        value: gpt-5.6-luna
+      - key: MATCH_MODEL
+        value: gpt-5.6-terra
+      - key: WRITE_MODEL
+        value: gpt-5.6-sol
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: RELIEFWEB_APPNAME
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: EMAIL_FROM
+        sync: false

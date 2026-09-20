@@ -1,0 +1,745 @@
+import hashlib
+import hmac
+import json
+import secrets as pysecrets
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone, timedelta
+from uuid import uuid4
+from typing import Literal
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    File,
+    BackgroundTasks,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response as RawResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field
+from .config import settings
+from .db import (
+    Session,
+    Record,
+    User,
+    initialize,
+    read,
+    put,
+    rows,
+    find,
+    get_row,
+    now,
+    set_scope,
+    user_snapshot,
+    current_user,
+)
+from . import auth as accounts
+from .schemas import Profile, Preferences, JobInput, SourceInput, Package, MATCH_RELEVANT_PREFERENCES
+from .documents import extract_text, package_zip
+from .ai import extract_profile, ai_available, verify_key
+from .sources import validate_source, collect, Context, SUGGESTED_SOURCES, KIND_LABELS, imap_check
+from .service import ingest, evaluate, expired, prepare_application, run_scan
+from .notifications import availability, test_alert
+from .scheduler import scheduler
+from . import telegram
+
+
+@asynccontextmanager
+async def lifespan(app):
+    if len(settings.app_token) < 24:
+        raise RuntimeError(
+            "Set APP_TOKEN to a random secret of at least 24 characters before starting."
+        )
+    initialize()
+    scheduler.start()
+    try:
+        yield
+    finally:
+        scheduler.shutdown()
+
+
+app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[s.strip() for s in settings.cors_origins.split(",") if s.strip()],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+)
+
+
+@app.middleware("http")
+async def private_responses(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["X-Frame-Options"] = "DENY"
+    return response
+
+
+def db_session():
+    with Session() as db:
+        yield db
+
+
+# --- authentication -------------------------------------------------------------------
+
+
+def set_session_cookie(response: Response, token: str):
+    response.set_cookie(
+        accounts.SESSION_COOKIE,
+        token,
+        max_age=accounts.SESSION_DAYS * 86400,
+        httponly=True,
+        samesite="lax",
+        secure=settings.public_https,
+        path="/",
+    )
+
+
+async def auth(request: Request, db=Depends(db_session)) -> User:
+    """Resolve the signed-in user (session cookie) or the owner (APP_TOKEN
+    bearer, for scripts) and enter their scope for this request."""
+    bearer = request.headers.get("authorization", "").removeprefix("Bearer ")
+    user = None
+    if bearer and settings.app_token and hmac.compare_digest(bearer, settings.app_token):
+        user = accounts.admin_user(db)
+        if not user:
+            raise HTTPException(401, "Create the first (owner) account in the dashboard, then retry.")
+    else:
+        token = request.cookies.get(accounts.SESSION_COOKIE)
+        user = accounts.session_user(db, token)
+        if not user:
+            raise HTTPException(401, "Sign in to continue.")
+        if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get(accounts.CSRF_HEADER, "").lower() != "careerpilot":
+            raise HTTPException(403, "Cross-site request rejected.")
+    accounts.touch(db, user)
+    set_scope(user_snapshot(user))
+    return user
+
+
+async def admin(user: User = Depends(auth)) -> User:
+    if user.role != "admin":
+        raise HTTPException(403, "Owner access only.")
+    return user
+
+
+def row_or_404(db, id, kind):
+    row = get_row(db, id, kind)
+    if not row:
+        raise HTTPException(404, "Record not found.")
+    return row
+
+
+def item(row):
+    return {"id": row.id, **row.data, "updated": row.updated}
+
+
+def job_summary(row):
+    """List view of a posting: everything except the full description."""
+    data = {k: v for k, v in row.data.items() if k not in ("description", "body_hash", "screen")}
+    description = row.data.get("description") or ""
+    return {
+        "id": row.id,
+        **data,
+        "description_preview": description[:280],
+        "expired": expired(row.data),
+        "updated": row.updated,
+    }
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": settings.app_name}
+
+
+@app.get("/api/setup")
+def setup(db=Depends(db_session)):
+    """Public: what the sign-in screen needs to know."""
+    return {
+        "app_name": settings.app_name,
+        "needs_first_account": db.query(User).count() == 0,
+        "invite_only": settings.invite_only,
+    }
+
+
+class Credentials(BaseModel):
+    email: str = Field(max_length=320)
+    password: str = Field(max_length=200)
+    name: str = Field(default="", max_length=200)
+    invite: str = Field(default="", max_length=64)
+
+
+@app.post("/api/auth/signup")
+def signup(body: Credentials, request: Request, response: Response, db=Depends(db_session)):
+    try:
+        accounts.throttle("signup:" + (request.client.host if request.client else "?"), limit=10)
+        user = accounts.register(db, body.email, body.password, body.name, body.invite)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    set_session_cookie(response, accounts.create_session(db, user, request.headers.get("user-agent", "")))
+    return user.public()
+
+
+@app.post("/api/auth/login")
+def login(body: Credentials, request: Request, response: Response, db=Depends(db_session)):
+    try:
+        accounts.throttle("login:" + body.email.strip().lower())
+        accounts.throttle("login-ip:" + (request.client.host if request.client else "?"), limit=30)
+    except ValueError as e:
+        raise HTTPException(429, str(e))
+    user = accounts.authenticate(db, body.email, body.password)
+    if not user:
+        raise HTTPException(401, "Email or password is incorrect.")
+    set_session_cookie(response, accounts.create_session(db, user, request.headers.get("user-agent", "")))
+    return user.public()
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: Response, db=Depends(db_session)):
+    accounts.destroy_session(db, request.cookies.get(accounts.SESSION_COOKIE))
+    response.delete_cookie(accounts.SESSION_COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def me(user: User = Depends(auth)):
+    return user.public()
+
+
+# --- account settings ----------------------------------------------------------------
+
+
+class AccountEdit(BaseModel):
+    name: str = Field(default="", max_length=200)
+
+
+@app.put("/api/account", )
+def edit_account(body: AccountEdit, user: User = Depends(auth), db=Depends(db_session)):
+    user.name = body.name.strip()
+    db.commit()
+    return user.public()
+
+
+class PasswordChange(BaseModel):
+    current: str = Field(max_length=200)
+    new: str = Field(max_length=200)
+
+
+@app.put("/api/account/password")
+def change_password(body: PasswordChange, user: User = Depends(auth), db=Depends(db_session)):
+    if not accounts.verify_password(body.current, user.password_hash):
+        raise HTTPException(422, "The current password is incorrect.")
+    try:
+        accounts.validate_password(body.new)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    user.password_hash = accounts.hash_password(body.new)
+    db.commit()
+    return {"ok": True}
+
+
+class KeyInput(BaseModel):
+    key: str = Field(min_length=20, max_length=300)
+
+
+@app.put("/api/account/openai_key")
+async def set_openai_key(body: KeyInput, user: User = Depends(auth), db=Depends(db_session)):
+    key = body.key.strip()
+    try:
+        await run_in_threadpool(verify_key, key)
+    except Exception as e:
+        raise HTTPException(422, f"OpenAI rejected this key or the configured models are not available to it ({type(e).__name__}).")
+    user.secrets = {**(user.secrets or {}), "openai_key": accounts.seal(key)}
+    db.commit()
+    return user.public()
+
+
+@app.delete("/api/account/openai_key")
+def remove_openai_key(user: User = Depends(auth), db=Depends(db_session)):
+    user.secrets = {k: v for k, v in (user.secrets or {}).items() if k != "openai_key"}
+    db.commit()
+    return user.public()
+
+
+class ImapInput(BaseModel):
+    host: str = Field(min_length=3, max_length=200)
+    port: int = Field(default=993, ge=1, le=65535)
+    username: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=1, max_length=200)
+    folder: str = Field(default="CareerPilot", max_length=100)
+
+
+@app.put("/api/account/imap")
+async def set_imap(body: ImapInput, user: User = Depends(auth), db=Depends(db_session)):
+    creds = body.model_dump()
+    creds["host"] = creds["host"].strip().lower()
+    creds["username"] = creds["username"].strip()
+    creds["folder"] = creds["folder"].strip() or "CareerPilot"
+    try:
+        count = await run_in_threadpool(imap_check, creds)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:
+        raise HTTPException(422, f"Could not reach the mailbox ({type(e).__name__}). Check the host and port.")
+    user.secrets = {**(user.secrets or {}), "imap": accounts.seal(creds)}
+    db.commit()
+    return {**user.public(), "messages_in_folder": count}
+
+
+@app.delete("/api/account/imap")
+def remove_imap(user: User = Depends(auth), db=Depends(db_session)):
+    user.secrets = {k: v for k, v in (user.secrets or {}).items() if k != "imap"}
+    db.commit()
+    return user.public()
+
+
+# --- admin -----------------------------------------------------------------------------
+
+
+@app.get("/api/admin/overview")
+def admin_overview(_: User = Depends(admin), db=Depends(db_session)):
+    users = db.query(User).order_by(User.created).all()
+    metrics = [accounts.user_metrics(db, u) for u in users]
+    return {
+        "users": metrics,
+        "invites": accounts.list_invites(db),
+        "totals": {
+            "users": len(users),
+            "activated": sum(1 for m in metrics if m["activated"]),
+            "drafted": sum(1 for m in metrics if m["drafted"]),
+            "with_key": sum(1 for m in metrics if m["has_openai_key"]),
+            "telegram": sum(1 for m in metrics if m["telegram_linked"]),
+        },
+        "plans": accounts.PLANS,
+    }
+
+
+class InviteRequest(BaseModel):
+    count: int = Field(default=1, ge=1, le=50)
+    note: str = Field(default="", max_length=200)
+
+
+@app.post("/api/admin/invites")
+def admin_invites(body: InviteRequest, _: User = Depends(admin), db=Depends(db_session)):
+    return {"codes": accounts.create_invites(db, body.count, body.note)}
+
+
+class UserEdit(BaseModel):
+    plan: Literal["free", "beta", "pro"] | None = None
+    role: Literal["admin", "member"] | None = None
+
+
+@app.put("/api/admin/users/{id}")
+def admin_edit_user(id: str, body: UserEdit, me: User = Depends(admin), db=Depends(db_session)):
+    user = db.get(User, id)
+    if not user:
+        raise HTTPException(404, "User not found.")
+    if body.plan:
+        user.plan = body.plan
+    if body.role:
+        if user.id == me.id and body.role != "admin":
+            raise HTTPException(422, "You cannot remove your own owner role.")
+        user.role = body.role
+    db.commit()
+    return accounts.user_metrics(db, user)
+
+
+@app.post("/api/admin/users/{id}/reset")
+def admin_reset_password(id: str, _: User = Depends(admin), db=Depends(db_session)):
+    user = db.get(User, id)
+    if not user:
+        raise HTTPException(404, "User not found.")
+    temporary = pysecrets.token_urlsafe(9)
+    user.password_hash = accounts.hash_password(temporary)
+    db.commit()
+    return {"temporary_password": temporary}
+
+
+# --- workspace state -------------------------------------------------------------------
+
+
+@app.get("/api/state")
+def state(user: User = Depends(auth), db=Depends(db_session)):
+    alerts = [item(r) for r in rows(db, "alert")]
+    limits = accounts.plan_limits(user.plan)
+    return {
+        "user": user.public(),
+        "plan": {"id": user.plan, **limits, "packages_used": accounts.packages_this_month(db)},
+        "app_name": settings.app_name,
+        "profile": read(db, "profile", Profile().model_dump()),
+        "preferences": {**Preferences().model_dump(), **read(db, "preferences", {})},
+        "schedule": read(db, "schedule", {"enabled": False}),
+        "scheduler": scheduler.status(),
+        "jobs": [job_summary(r) for r in rows(db, "job")],
+        "sources": [item(r) for r in rows(db, "source")],
+        "applications": [item(r) for r in rows(db, "application")],
+        "runs": sorted(
+            [item(r) for r in rows(db, "run")],
+            key=lambda r: r.get("created", ""),
+            reverse=True,
+        )[:10],
+        "connections": availability(db),
+        "alerts": alerts,
+        "inbox_unread": sum(1 for a in alerts if a.get("channel") == "inapp" and a.get("status") == "unread"),
+        "telegram": telegram.link_status(db),
+        "source_kinds": KIND_LABELS,
+        "suggested_sources": SUGGESTED_SOURCES,
+    }
+
+
+@app.get("/api/jobs/{id}", dependencies=[Depends(auth)])
+def job_detail(id: str, db=Depends(db_session)):
+    row = row_or_404(db, id, "job")
+    return {**item(row), "expired": expired(row.data)}
+
+
+@app.post("/api/profile/upload", dependencies=[Depends(auth)])
+async def upload(file: UploadFile = File(...), db=Depends(db_session)):
+    data = await file.read(5_000_001)
+    if len(data) > 5_000_000:
+        raise HTTPException(413, "Maximum upload size is 5 MB.")
+    try:
+        text = await run_in_threadpool(extract_text, data, file.filename or "")
+        profile = await run_in_threadpool(extract_profile, text)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception:
+        raise HTTPException(
+            422,
+            "Could not process the document. Check its format and AI configuration, or paste the text.",
+        )
+    put(db, "profile_source", "profile_source", {"text": text, "filename": file.filename})
+    put(db, "profile", "profile", profile.model_dump())
+    invalidate_matches(db)
+    return profile
+
+
+class TextImport(BaseModel):
+    text: str = Field(min_length=40, max_length=100000)
+
+
+@app.post("/api/profile/text", dependencies=[Depends(auth)])
+def profile_text(body: TextImport, db=Depends(db_session)):
+    try:
+        profile = extract_profile(body.text)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    put(db, "profile_source", "profile_source", {"text": body.text, "filename": "Pasted CV"})
+    put(db, "profile", "profile", profile.model_dump())
+    invalidate_matches(db)
+    return profile
+
+
+def invalidate_matches(db):
+    for row in rows(db, "job"):
+        if row.data.get("match") is not None:
+            row.data = {**row.data, "match": None}
+    db.commit()
+
+
+def evidence_hash(profile):
+    verified = sorted(
+        (f.get("id", ""), f.get("text", ""))
+        for f in profile.get("facts", [])
+        if f.get("verified")
+    )
+    return hashlib.sha256(json.dumps(verified).encode()).hexdigest()
+
+
+@app.put("/api/profile", dependencies=[Depends(auth)])
+def save_profile(profile: Profile, db=Depends(db_session)):
+    if len({f.id for f in profile.facts}) != len(profile.facts):
+        raise HTTPException(422, "Evidence IDs must be unique.")
+    previous = read(db, "profile", {})
+    put(db, "profile", "profile", profile.model_dump())
+    if evidence_hash(previous) != evidence_hash(profile.model_dump()):
+        invalidate_matches(db)
+    return profile
+
+
+@app.put("/api/preferences", dependencies=[Depends(auth)])
+def prefs(prefs: Preferences, db=Depends(db_session)):
+    previous = {**Preferences().model_dump(), **read(db, "preferences", {})}
+    put(db, "preferences", "preferences", prefs.model_dump())
+    current = prefs.model_dump()
+    if any(previous.get(k) != current.get(k) for k in MATCH_RELEVANT_PREFERENCES):
+        invalidate_matches(db)
+    return prefs
+
+
+class Schedule(BaseModel):
+    enabled: bool
+
+
+@app.put("/api/schedule")
+def schedule(body: Schedule, user: User = Depends(auth), db=Depends(db_session)):
+    if body.enabled and not accounts.plan_limits(user.plan)["schedule"]:
+        raise HTTPException(403, "Scheduled searches are not included in your plan.")
+    return item(put(db, "schedule", "schedule", body.model_dump()))
+
+
+@app.post("/api/sources")
+def source(body: SourceInput, user: User = Depends(auth), db=Depends(db_session)):
+    try:
+        validate_source(body.kind, body.value)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    value = body.value.strip()
+    key = f"source:{body.kind}:{value}"
+    if not find(db, key) and len(rows(db, "source")) >= accounts.plan_limits(user.plan)["sources"]:
+        raise HTTPException(403, "Your plan's source limit is reached. Remove a source or upgrade.")
+    return item(put(db, "source", key, {**body.model_dump(), "value": value}))
+
+
+@app.put("/api/sources/{id}", dependencies=[Depends(auth)])
+def toggle_source(id: str, body: Schedule, db=Depends(db_session)):
+    row = row_or_404(db, id, "source")
+    return item(put(db, "source", row.key, {**row.data, "enabled": body.enabled}))
+
+
+@app.delete("/api/sources/{id}", dependencies=[Depends(auth)])
+def delete_source(id: str, db=Depends(db_session)):
+    db.delete(row_or_404(db, id, "source"))
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/sources/test", dependencies=[Depends(auth)])
+async def test_source(body: SourceInput):
+    """Read a source once with a small budget and report what came back."""
+    try:
+        validate_source(body.kind, body.value)
+        jobs, _ = await run_in_threadpool(
+            collect, body.model_dump(), None, Context(page_budget=3, delay=0.5, sample=True)
+        )
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:
+        raise HTTPException(
+            502,
+            f"The source could not be read ({type(e).__name__}). Check the identifier or address and that the provider is reachable.",
+        )
+    full = [j for j in jobs if not j.get("partial")]
+    return {
+        "received": len(jobs),
+        "sample": [
+            {"title": j["title"], "company": j.get("company", ""), "location": j.get("location", ""), "url": j.get("url", "")}
+            for j in full[:8]
+        ],
+    }
+
+
+@app.post("/api/jobs", dependencies=[Depends(auth)])
+def add_job(job: JobInput, db=Depends(db_session)):
+    try:
+        row, created = ingest(db, job.model_dump())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {**item(row), "created_new": created}
+
+
+class Decision(BaseModel):
+    status: Literal["new", "saved", "skipped", "applied", "archived"]
+
+
+@app.put("/api/jobs/{id}/decision", dependencies=[Depends(auth)])
+def decide(id: str, body: Decision, db=Depends(db_session)):
+    row = row_or_404(db, id, "job")
+    return item(put(db, "job", row.key, {**row.data, "status": body.status}))
+
+
+@app.post("/api/jobs/{id}/match", dependencies=[Depends(auth)])
+def match(id: str, db=Depends(db_session)):
+    row = row_or_404(db, id, "job")
+    if not any(f.get("verified") for f in read(db, "profile", {}).get("facts", [])):
+        raise HTTPException(409, "Upload and verify your CV evidence first.")
+    try:
+        return item(evaluate(db, row))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception:
+        raise HTTPException(502, "Matching failed. Check the AI connection and retry.")
+
+
+@app.post("/api/jobs/{id}/prepare")
+def prepare(id: str, tasks: BackgroundTasks, user: User = Depends(auth), db=Depends(db_session)):
+    job = row_or_404(db, id, "job")
+    if not ai_available():
+        raise HTTPException(409, "Add your OpenAI API key under Account before preparing documents.")
+    if expired(job.data):
+        raise HTTPException(409, "This job's deadline has passed.")
+    if not any(f.get("verified") for f in read(db, "profile", {}).get("facts", [])):
+        raise HTTPException(409, "Verify your CV evidence first.")
+    old = read(db, "application:" + id)
+    if old and old.get("status") in ("queued", "preparing", "review", "ready"):
+        started = datetime.fromisoformat(old.get("approved_at", now()))
+        if old["status"] in ("review", "ready") or started > datetime.now(timezone.utc) - timedelta(minutes=10):
+            return old
+    if not old and accounts.packages_this_month(db) >= accounts.plan_limits(user.plan)["packages_per_month"]:
+        raise HTTPException(403, "Your plan's monthly application limit is reached.")
+    row = put(
+        db,
+        "application",
+        "application:" + id,
+        {
+            "job_id": id,
+            "title": job.data["title"],
+            "company": job.data["company"],
+            "status": "queued",
+            "approved_at": now(),
+        },
+    )
+    put(db, "job", job.key, {**job.data, "status": "saved"})
+    if settings.task_queue == "celery":
+        from .tasks import prepare as queued_prepare
+
+        try:
+            queued_prepare.delay(id, user.id)
+        except Exception:
+            put(db, "application", row.key, {**row.data, "status": "failed", "error": "Worker queue unavailable. Restart Redis and the worker, then retry."})
+            raise HTTPException(503, "Worker queue unavailable.")
+    else:
+        tasks.add_task(prepare_application, id, user.id)
+    return item(row)
+
+
+class PackageEdit(BaseModel):
+    package: Package
+    status: Literal["review", "ready"] = "review"
+
+
+@app.put("/api/applications/{id}", dependencies=[Depends(auth)])
+def edit_application(id: str, body: PackageEdit, db=Depends(db_session)):
+    row = row_or_404(db, id, "application")
+    for answer in body.package.answers:
+        if answer.character_limit and len(answer.answer) > answer.character_limit:
+            raise HTTPException(422, "A screening answer exceeds its character limit.")
+    put(
+        db,
+        "application_version",
+        "application_version:" + uuid4().hex,
+        {"application_id": id, "saved_at": now(), "previous": row.data},
+    )
+    return item(
+        put(
+            db,
+            "application",
+            row.key,
+            {**row.data, "package": body.package.model_dump(), "status": body.status, "reviewed_at": now()},
+        )
+    )
+
+
+@app.get("/api/applications/{id}/versions", dependencies=[Depends(auth)])
+def application_versions(id: str, db=Depends(db_session)):
+    row_or_404(db, id, "application")
+    return [item(r) for r in rows(db, "application_version") if r.data.get("application_id") == id]
+
+
+@app.get("/api/applications/{id}/download", dependencies=[Depends(auth)])
+def download(id: str, db=Depends(db_session)):
+    row = row_or_404(db, id, "application")
+    if not row.data.get("package"):
+        raise HTTPException(409, "Documents are not ready yet.")
+    content = package_zip(row.data["package"], row.data.get("profile_snapshot", {}).get("name", ""))
+    return RawResponse(
+        content,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=application_package.zip"},
+    )
+
+
+@app.post("/api/scan")
+def scan(tasks: BackgroundTasks, user: User = Depends(auth), db=Depends(db_session)):
+    for current in rows(db, "run"):
+        if current.data.get("status") in ("queued", "running") and datetime.fromisoformat(
+            current.data["created"]
+        ) > datetime.now(timezone.utc) - timedelta(minutes=30):
+            return item(current)
+    row = put(db, "run", "run:" + uuid4().hex, {"status": "queued", "created": now(), "trigger": "manual"})
+    if settings.task_queue == "celery":
+        from .tasks import scan_existing
+
+        try:
+            scan_existing.delay(row.id, user.id)
+        except Exception:
+            put(db, "run", row.key, {**row.data, "status": "failed", "error": "Worker queue unavailable."})
+            raise HTTPException(503, "Worker queue unavailable.")
+    else:
+        tasks.add_task(run_scan, row.id, user.id)
+    return item(row)
+
+
+class InboxRead(BaseModel):
+    job_ids: list[str] = Field(default_factory=list)
+
+
+@app.post("/api/inbox/read", dependencies=[Depends(auth)])
+def inbox_read(body: InboxRead, db=Depends(db_session)):
+    changed = 0
+    for row in rows(db, "alert"):
+        if row.data.get("channel") != "inapp" or row.data.get("status") != "unread":
+            continue
+        if body.job_ids and row.data.get("job_id") not in body.job_ids:
+            continue
+        put(db, "alert", row.key, {**row.data, "status": "read", "read_at": now()})
+        changed += 1
+    return {"read": changed}
+
+
+@app.post("/api/notify/test/{channel}", dependencies=[Depends(auth)])
+async def notify_test(channel: Literal["email", "telegram", "whatsapp"], db=Depends(db_session)):
+    try:
+        return await run_in_threadpool(test_alert, db, channel)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"The provider rejected the test message ({type(e).__name__}). Check the server credentials.")
+
+
+@app.post("/api/telegram/link", dependencies=[Depends(auth)])
+async def telegram_link(db=Depends(db_session)):
+    if not settings.telegram_bot_token:
+        raise HTTPException(409, "Telegram is not configured on this server.")
+    code = telegram.create_link_code(db)
+    username = await run_in_threadpool(telegram.bot_username)
+    return {"code": code, "bot_username": username, "expires_minutes": 15, **telegram.link_status(db)}
+
+
+@app.delete("/api/telegram/link", dependencies=[Depends(auth)])
+def telegram_unlink(db=Depends(db_session)):
+    for key in ("telegram", "telegram_link"):
+        row = find(db, key)
+        if row:
+            db.delete(row)
+    db.commit()
+    return telegram.link_status(db)
+
+
+@app.post("/api/telegram/webhook")
+async def telegram_webhook(request: Request, db=Depends(db_session)):
+    """Optional webhook for HTTPS deployments. Local installs use long polling."""
+    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if not settings.telegram_webhook_secret or not hmac.compare_digest(secret, settings.telegram_webhook_secret):
+        raise HTTPException(401, "Invalid webhook.")
+    data = await request.json()
+    callback = data.get("callback_query")
+    if not callback:
+        return {"ok": True}
+    chat = str(callback.get("message", {}).get("chat", {}).get("id", ""))
+    sender = str(callback.get("from", {}).get("id", ""))
+    if not chat or chat != sender or not telegram.user_for_chat(db, chat):
+        raise HTTPException(403, "Wrong Telegram user.")
+    await run_in_threadpool(telegram.handle_callback, db, callback)
+    return {"ok": True}
+
+
+if settings.dashboard_dir.is_dir():
+    app.mount("/", StaticFiles(directory=settings.dashboard_dir, html=True), name="dashboard")
