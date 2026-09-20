@@ -53,3 +53,33 @@ def test_interrupted_migration_resumes():
     with Session() as db:
         assert db.query(Record).count() == 2
         assert db.query(User).count() == 0
+
+
+def test_backup_and_restore_round_trip(client, monkeypatch):
+    """Owner downloads a backup; an empty instance restores it with the setup code."""
+    from io import BytesIO
+    from tests.test_workflow import JOB, verified_profile
+    from tests.conftest import reset_database
+    from fastapi.testclient import TestClient
+    from career.main import app
+
+    verified_profile(client)
+    client.post("/api/jobs", json=JOB)
+    r = client.get("/api/admin/backup")
+    assert r.status_code == 200 and r.content.startswith(b"SQLite format 3")
+    backup = r.content
+    reset_database()
+    with TestClient(app) as anon:
+        assert anon.get("/api/setup").json()["needs_first_account"] is True
+        # Wrong code, garbage file, then a real restore.
+        assert anon.post("/api/admin/restore", files={"file": ("b.db", backup)}, headers={"Authorization": "Bearer nope"}).status_code == 401
+        assert anon.post("/api/admin/restore", files={"file": ("b.db", b"junk")}, headers={"Authorization": "Bearer test-token-only-0123456789abcdef"}).status_code == 422
+        r = anon.post("/api/admin/restore", files={"file": ("b.db", backup)}, headers={"Authorization": "Bearer test-token-only-0123456789abcdef"})
+        assert r.status_code == 200 and r.json()["accounts"] == 1 and r.json()["records"] >= 3
+        assert anon.get("/api/setup").json()["needs_first_account"] is False
+        # The restored owner can sign in and sees their data.
+        assert anon.post("/api/auth/login", json={"email": "owner@example.org", "password": "owner-password-123"}, headers={"X-Requested-With": "CareerPilot"}).status_code == 200
+        state = anon.get("/api/state").json()
+        assert state["profile"]["name"] == "Example Applicant" and len(state["jobs"]) == 1
+        # A second restore is refused now that accounts exist.
+        assert anon.post("/api/admin/restore", files={"file": ("b.db", backup)}, headers={"Authorization": "Bearer test-token-only-0123456789abcdef"}).status_code == 409

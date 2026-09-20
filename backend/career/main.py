@@ -26,6 +26,7 @@ from .db import (
     Session,
     Record,
     User,
+    engine,
     initialize,
     read,
     put,
@@ -63,7 +64,7 @@ async def lifespan(app):
         scheduler.shutdown()
 
 
-VERSION = "0.3.4"
+VERSION = "0.3.5"
 app = FastAPI(title=settings.app_name, version=VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -456,6 +457,79 @@ def admin_reset_password(id: str, _: User = Depends(admin), db=Depends(db_sessio
     db.commit()
     accounts.destroy_user_sessions(db, user.id)
     return {"temporary_password": temporary}
+
+
+# --- migration: owner-only backup, restore into an empty instance -----------------------
+
+
+@app.get("/api/admin/backup")
+def admin_backup(_: User = Depends(admin)):
+    """Consistent copy of the SQLite database (owner only). Postgres deployments
+    use the provider's own dump tools."""
+    import sqlite3
+    import tempfile
+    from pathlib import Path as _Path
+
+    if not settings.database_url.startswith("sqlite"):
+        raise HTTPException(409, "Backup download is only available for SQLite databases.")
+    with tempfile.TemporaryDirectory() as tmp:
+        target = _Path(tmp) / "backup.db"
+        raw = engine.raw_connection()
+        try:
+            dest = sqlite3.connect(str(target))
+            try:
+                raw.driver_connection.backup(dest)
+            finally:
+                dest.close()
+        finally:
+            raw.close()
+        data = target.read_bytes()
+    return RawResponse(
+        data,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": "attachment; filename=career-backup.sqlite3", "Content-Length": str(len(data))},
+    )
+
+
+@app.post("/api/admin/restore")
+async def admin_restore(request: Request, file: UploadFile = File(...), db=Depends(db_session)):
+    """Load a backup into an instance that has no accounts yet. Requires the
+    setup code (APP_TOKEN) in the Authorization header, like the first sign-up."""
+    bearer = request.headers.get("authorization", "").removeprefix("Bearer ")
+    if not (settings.app_token and hmac.compare_digest(bearer, settings.app_token)):
+        raise HTTPException(401, "Provide the setup code as a bearer token.")
+    if not settings.database_url.startswith("sqlite"):
+        raise HTTPException(409, "Restore is only available for SQLite databases.")
+    if db.query(User).count():
+        raise HTTPException(409, "This instance already has accounts. Restore only into an empty instance.")
+    import sqlite3
+    import tempfile
+    from pathlib import Path as _Path
+
+    data = await file.read(200_000_000)
+    if not data.startswith(b"SQLite format 3\x00"):
+        raise HTTPException(422, "That file is not a SQLite database.")
+    with tempfile.TemporaryDirectory() as tmp:
+        source_path = _Path(tmp) / "restore.db"
+        source_path.write_bytes(data)
+        source = sqlite3.connect(str(source_path))
+        try:
+            tables = {r[0] for r in source.execute("select name from sqlite_master where type='table'")}
+            if not {"records", "users"} <= tables:
+                raise HTTPException(422, "The backup does not contain Career Pilot tables.")
+            db.close()
+            engine.dispose()
+            raw = engine.raw_connection()
+            try:
+                source.backup(raw.driver_connection)
+            finally:
+                raw.close()
+        finally:
+            source.close()
+    engine.dispose()
+    initialize()
+    with Session() as fresh:
+        return {"restored": True, "accounts": fresh.query(User).count(), "records": fresh.query(Record).count()}
 
 
 # --- workspace state -------------------------------------------------------------------
