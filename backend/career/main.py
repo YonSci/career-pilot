@@ -62,7 +62,8 @@ async def lifespan(app):
         scheduler.shutdown()
 
 
-app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
+VERSION = "0.3.1"
+app = FastAPI(title=settings.app_name, version=VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[s.strip() for s in settings.cors_origins.split(",") if s.strip()],
@@ -156,7 +157,7 @@ def job_summary(row):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": settings.app_name}
+    return {"status": "ok", "service": settings.app_name, "version": VERSION}
 
 
 @app.get("/api/setup")
