@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import contextvars
 from datetime import datetime, timezone, timedelta
 import hashlib
 import logging
@@ -372,22 +374,43 @@ def _run_scan(run_id):
         ]
         candidates.sort(key=lambda r: priority(r.data))
         budget = evaluation_budget()
-        for row in candidates[:budget]:
-            result["progress"] = "Evaluating: " + row.data["title"]
+        batch = candidates[:budget]
+        verified_profile = profile if any(f.get("verified") for f in profile.get("facts", [])) else None
+        if batch and verified_profile:
+            # Model calls run a few at a time; the database is written from this thread only.
+            total = len(batch)
+            result["progress"] = f"Evaluating 0 of {total}: " + batch[0].data["title"]
             put(db, "run", run.key, result)
-            try:
-                row = evaluate(db, row)
-                if row.data.get("match"):
-                    result["matched"] += 1
-            except Exception:
-                db.rollback()
-                log.exception("Match evaluation failed for %s", row.data.get("title"))
-                attempts = (row.data.get("match_attempts") or 0) + 1
-                put(db, "job", row.key, {**row.data, "match_attempts": attempts, "match_error_at": now()})
-                result.setdefault("warnings", []).append(
-                    "A match could not be evaluated; it will be retried."
-                )
-            put(db, "run", run.key, result)
+            context = contextvars.copy_context()
+            with ThreadPoolExecutor(max_workers=settings.evaluation_workers) as pool:
+                futures = {
+                    pool.submit(context.run, match_job, verified_profile, row.data, prefs): row
+                    for row in batch
+                }
+                done = 0
+                for future in as_completed(futures):
+                    row = futures[future]
+                    done += 1
+                    try:
+                        match = future.result()
+                        put(
+                            db,
+                            "job",
+                            row.key,
+                            {**row.data, "match": match, "match_attempts": 0, "match_error_at": None, "evaluated": now()},
+                        )
+                        if match:
+                            result["matched"] += 1
+                    except Exception:
+                        db.rollback()
+                        log.exception("Match evaluation failed for %s", row.data.get("title"))
+                        attempts = (row.data.get("match_attempts") or 0) + 1
+                        put(db, "job", row.key, {**row.data, "match_attempts": attempts, "match_error_at": now()})
+                        result.setdefault("warnings", []).append(
+                            "A match could not be evaluated; it will be retried."
+                        )
+                    result["progress"] = f"Evaluating {done} of {total}: " + row.data["title"]
+                    put(db, "run", run.key, result)
         if len(candidates) > budget:
             result.setdefault("warnings", []).append(
                 f"{len(candidates) - budget} postings await evaluation in the next search (limit {budget} per run)."

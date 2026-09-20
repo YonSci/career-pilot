@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     # In-process scheduler (background mode only). Celery Beat owns scheduling in Docker.
     scheduler_enabled: bool = True
     max_matches_per_run: int = 50
+    # Concurrent model calls during a search (evaluations and email extraction).
+    evaluation_workers: int = 4
     # Politeness limits for connectors that read individual public posting pages.
     max_page_fetches_per_run: int = 60
     fetch_delay_seconds: float = 1.0

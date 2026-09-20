@@ -9,6 +9,8 @@ entry so the run can refresh last_seen without re-downloading or re-evaluating.
 """
 
 import base64
+import contextvars
+from concurrent.futures import ThreadPoolExecutor
 import email
 import email.policy
 import imaplib
@@ -600,6 +602,17 @@ def get_gmail_token(client):
     return r.json()["access_token"]
 
 
+def extract_email_batch(items):
+    """Extract several emails concurrently: items are (text, posted) tuples.
+    Returns a flat list of jobs in the same order; failures raise."""
+    if not items:
+        return []
+    context = contextvars.copy_context()
+    with ThreadPoolExecutor(max_workers=settings.evaluation_workers) as pool:
+        results = list(pool.map(lambda it: context.run(extract_email_jobs, it[0], it[1]), items))
+    return [job for batch in results for job in batch]
+
+
 def extract_email_jobs(text, posted=None):
     """AI extraction shared by the Gmail and IMAP connectors."""
     result = structured(
@@ -633,7 +646,7 @@ def gmail(client, value, ctx):
         params={"q": value or settings.gmail_query, "maxResults": 3 if ctx.sample else 25},
     )
     r.raise_for_status()
-    jobs = []
+    jobs, pending, pending_ids = [], [], []
     for msg in r.json().get("messages", []):
         if msg["id"] in ctx.seen_mail:
             continue
@@ -674,7 +687,7 @@ def imap_mailbox(client, value, ctx):
         raise ValueError("Add your OpenAI API key before importing job-alert emails.")
     folder = (value or creds.get("folder") or "CareerPilot").strip()
     since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%d-%b-%Y")
-    jobs = []
+    jobs, pending = [], []
     with imaplib.IMAP4_SSL(creds["host"], int(creds.get("port") or 993)) as box:
         try:
             box.login(creds["username"], creds["password"])
@@ -711,8 +724,9 @@ def imap_mailbox(client, value, ctx):
                 ctx.mail_ids.append(key)
                 continue
             posted = iso(message.get("Date")) if message.get("Date") else None
-            jobs.extend(extract_email_jobs(text, posted))
+            pending.append((text, posted))
             ctx.mail_ids.append(key)
+    jobs.extend(extract_email_batch(pending))
     return jobs
 
 
