@@ -133,6 +133,75 @@ def test_password_reset_and_change_invalidate_other_sessions(client):
     assert b.get("/api/state").status_code == 401, "other sessions are signed out"
 
 
+def test_http_fetch_is_pinned_before_the_request_is_sent(monkeypatch):
+    monkeypatch.setattr(sources, "resolve_host", lambda host: ["93.184.216.34"])
+    seen = []
+
+    def handler(request):
+        seen.append((request.url.host, request.headers.get("host"), request.extensions.get("sni_hostname")))
+        if request.url.path == "/hop":
+            return httpx.Response(302, headers={"location": "https://example.org/final"})
+        return httpx.Response(200, headers={"content-type": "text/html"}, content=b"<html><main>ok page</main></html>")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    r = sources.safe_get(client, "https://example.org/hop")
+    assert "ok page" in r.text
+    # Every hop connects to the validated address with the hostname preserved for Host and TLS.
+    assert seen == [("93.184.216.34", "example.org", "example.org"), ("93.184.216.34", "example.org", "example.org")]
+    # A hostname that resolves to a private address never produces a request.
+    monkeypatch.setattr(sources, "resolve_host", lambda host: ["10.0.0.7"])
+    seen.clear()
+    with pytest.raises(ValueError, match="private"):
+        sources.safe_get(client, "https://internal.example.org/x")
+    assert seen == []
+
+
+def test_time_budget_is_cooperative_inside_connectors(monkeypatch):
+    from datetime import datetime, timezone, timedelta
+
+    past = datetime.now(timezone.utc) - timedelta(seconds=1)
+    ctx = sources.Context(delay=0, deadline=past)
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"<html>x</html>", headers={"content-type": "text/html"})))
+    assert ctx.fetch_page(client, "https://example.org/page") is None and ctx.skipped_for_budget == 1
+    assert ctx.out_of_time()
+
+
+def test_deferred_sources_run_first_next_time(client, monkeypatch):
+    verified_profile(client)
+    client.post("/api/sources", json={"kind": "greenhouse", "value": "aaa"})
+    client.post("/api/sources", json={"kind": "greenhouse", "value": "bbb"})
+    from career.db import Session, put, rows
+    from tests.conftest import OWNER
+
+    with Session() as db:
+        owner = db.query(User).filter_by(email=OWNER["email"]).one()
+        for row in rows(db, "source", user_id=owner.id):
+            if row.data["value"] == "bbb":
+                put(db, "source", row.key, {**row.data, "deferred_at": "2026-01-01T00:00:00+00:00"}, user_id=owner.id)
+    order = []
+    monkeypatch.setattr("career.service.collect", lambda source, *a, **k: order.append(source["value"]) or ([], []))
+    client.post("/api/scan")
+    assert order == ["bbb", "aaa"]
+    with Session() as db:
+        owner = db.query(User).filter_by(email=OWNER["email"]).one()
+        assert not any(r.data.get("deferred_at") for r in rows(db, "source", user_id=owner.id))
+
+
+def test_evaluations_stop_when_the_time_budget_is_spent(client, monkeypatch):
+    verified_profile(client)
+    client.post("/api/sources", json={"kind": "greenhouse", "value": "example"})
+    feed = [{**JOB, "title": f"Data Scientist {i}", "url": f"https://example.org/jobs/{i}"} for i in range(6)]
+    monkeypatch.setattr("career.service.collect", lambda *a, **k: (feed, []))
+    monkeypatch.setattr(settings, "openai_api_key", "fake-test-key")
+    monkeypatch.setattr(settings, "scan_time_budget_minutes", 0)
+    calls = []
+    monkeypatch.setattr("career.service.match_job", lambda *a: calls.append(1) or {"score": 50, "summary": "s", "requirements": [], "strengths": [], "gaps": [], "mode": "ai"})
+    client.post("/api/scan")
+    run = client.get("/api/state").json()["runs"][0]
+    assert run["status"] == "completed" and calls == []
+    assert any("time budget" in w for w in run.get("warnings", []))
+
+
 def test_gzip_pages_are_decoded_once(monkeypatch):
     import gzip
 

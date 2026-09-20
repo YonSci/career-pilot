@@ -125,7 +125,8 @@ def test_reliefweb_rss_fallback_reads_pages_within_budget(monkeypatch):
     mock(monkeypatch, handler)
     ctx = Context(known_urls={"https://reliefweb.int/job/1/known"}, page_budget=5, delay=0)
     jobs, _ = collect({"kind": "reliefweb", "value": "climate"}, ctx=ctx)
-    assert fetched == ["https://reliefweb.int/job/99/climate-data-officer"]
+    # Page fetches are pinned to the validated address; the path is what matters here.
+    assert [httpx.URL(u).path for u in fetched] == ["/job/99/climate-data-officer"]
     assert jobs[0]["company"] == "Example NGO" and jobs[0]["location"] == "Ethiopia"
     assert jobs[0]["deadline"] == "2026-09-25" and "Menu" not in jobs[0]["description"]
     assert jobs[1]["partial"] is True

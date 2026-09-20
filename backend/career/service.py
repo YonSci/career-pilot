@@ -314,14 +314,19 @@ def _run_scan(run_id):
         deadline = started_at + timedelta(minutes=settings.scan_time_budget_minutes)
         known_urls = {r.data.get("url") for r in rows(db, "job") if r.data.get("url")}
         seen_mail = {r.data["id"] for r in rows(db, "mail")}
-        ctx = Context(known_urls=known_urls, seen_mail=seen_mail)
+        ctx = Context(known_urls=known_urls, seen_mail=seen_mail, deadline=deadline)
+        # Sources deferred by an earlier search go first.
+        sources.sort(key=lambda s: (0 if s.data.get("deferred_at") else 1, s.data.get("deferred_at") or ""))
         for source in sources:
             if not source.data.get("enabled"):
                 continue
             label = source.data["kind"] + (": " + source.data["value"] if source.data.get("value") else "")
             if datetime.now(timezone.utc) > deadline:
+                put(db, "source", source.key, {**source.data, "deferred_at": now()})
                 result["sources"].append({"name": label, "status": "deferred", "error": "Skipped: the search's time budget was used up; this source runs first next time."})
                 continue
+            if source.data.get("deferred_at"):
+                put(db, "source", source.key, {k: v for k, v in source.data.items() if k != "deferred_at"})
             result["progress"] = "Reading " + label
             put(db, "run", run.key, result)
             fetched_before = ctx.pages_fetched
@@ -388,10 +393,16 @@ def _run_scan(run_id):
             put(db, "run", run.key, result)
             with ThreadPoolExecutor(max_workers=settings.evaluation_workers) as pool:
                 # A Context can be entered by one thread at a time, so every task gets its own copy.
-                futures = {
-                    pool.submit(contextvars.copy_context().run, match_job, verified_profile, row.data, prefs): row
-                    for row in batch
-                }
+                # Postings are submitted only while the time budget allows; running calls finish.
+                futures = {}
+                for row in batch:
+                    if datetime.now(timezone.utc) >= deadline:
+                        break
+                    futures[pool.submit(contextvars.copy_context().run, match_job, verified_profile, row.data, prefs)] = row
+                if len(futures) < len(batch):
+                    result.setdefault("warnings", []).append(
+                        f"{len(batch) - len(futures)} postings were left for the next search because the time budget was used up."
+                    )
                 done = 0
                 for future in as_completed(futures):
                     row = futures[future]
@@ -414,7 +425,7 @@ def _run_scan(run_id):
                         result.setdefault("warnings", []).append(
                             "A match could not be evaluated; it will be retried."
                         )
-                    result["progress"] = f"Evaluating {done} of {total}: " + row.data["title"]
+                    result["progress"] = f"Evaluating {done} of {len(futures)}: " + row.data["title"]
                     put(db, "run", run.key, result)
         if len(candidates) > budget:
             result.setdefault("warnings", []).append(

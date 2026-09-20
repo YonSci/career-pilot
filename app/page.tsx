@@ -2021,7 +2021,17 @@ export default function Home() {
                         {["delivery_unknown", "failed"].includes(a.status) && (
                           <>
                             {" "}
-                            <button className="text-button" disabled={!!busy} onClick={() => act("resend", () => call(`/alerts/${a.id}/resend`, "POST"), "Alert resent")}>
+                            <button
+                              className="text-button"
+                              disabled={!!busy}
+                              onClick={() =>
+                                act("resend", async () => {
+                                  const r = await call<{ status: string }>(`/alerts/${a.id}/resend`, "POST");
+                                  if (r.status === "accepted") toast.success("The provider accepted the alert.");
+                                  else toast.warning("Delivery is still uncertain. The provider did not confirm the message.");
+                                })
+                              }
+                            >
                               Resend
                             </button>
                           </>

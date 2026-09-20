@@ -30,7 +30,8 @@
 
 <h2>Third parties</h2>
 <ul>
-  <li><strong>OpenAI</strong> processes your verified facts and the postings to produce evaluations and drafts, under your own API key. Requests are sent with storage disabled.</li>
+  <li><strong>OpenAI, under your own API key</strong>: (a) the full text of the CV you upload or paste is sent once to extract facts with source quotes; (b) your verified facts and each posting are sent to produce evaluations and drafts; (c) if you connect a mailbox, the text of each job-alert email in your CareerPilot label is sent to extract the postings it lists; (d) if you add a careers-page source, that page's text is sent to identify the postings on it. Requests are sent with storage disabled on OpenAI's side.</li>
+  <li><strong>The help assistant</strong> sends your question, the recent turns of that conversation and, when you are signed in, a short non-sensitive summary of your account status (for example whether a key is set and how many sources you have) to OpenAI under the service owner's key, with storage disabled. Conversations are not stored by the service.</li>
   <li><strong>Job sources</strong> (ReliefWeb, employer boards, feeds, your mailbox) are read on your instruction.</li>
   <li><strong>Telegram</strong> and email providers deliver the alerts you enable.</li>
   <li>The hosting provider stores the encrypted database on infrastructure in the EU.</li>

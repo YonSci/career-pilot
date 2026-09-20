@@ -91,13 +91,35 @@ def assert_public_peer(response):
         raise ValueError("That address points to a private or local network and cannot be used as a source.")
 
 
+def pinned_request(url):
+    """Resolve and validate `url`, then return (pinned_url, headers, extensions)
+    that connect to the validated address while keeping the hostname for the
+    Host header and TLS verification. DNS cannot change the target afterwards."""
+    url = public_url(url)
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    try:
+        ipaddress.ip_address(host)
+        return url, {}, {}
+    except ValueError:
+        pass
+    address = resolve_host(host)[0]
+    literal = f"[{address}]" if ":" in address else address
+    netloc = literal + (f":{parsed.port}" if parsed.port else "")
+    pinned = parsed._replace(netloc=netloc).geturl()
+    host_header = host + (f":{parsed.port}" if parsed.port else "")
+    return pinned, {"Host": host_header}, {"sni_hostname": host}
+
+
 def safe_get(client, url, accept=None):
-    """GET with manual redirects so every hop is checked against the network
-    policy, a post-connect peer check, and a bound on the response size.
+    """GET with manual redirects so every hop is validated and pinned before the
+    request is sent, a post-connect peer check, and a bound on the response size.
     The returned response carries decoded bytes, so encoding headers are dropped."""
-    current = public_url(url)
+    current = url
     for _ in range(MAX_REDIRECTS + 1):
-        with client.stream("GET", current, follow_redirects=False, headers={"Accept": accept} if accept else None) as r:
+        pinned, host_headers, extensions = pinned_request(current)
+        headers = {**host_headers, **({"Accept": accept} if accept else {})}
+        with client.stream("GET", pinned, follow_redirects=False, headers=headers, extensions=extensions) as r:
             assert_public_peer(r)
             if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
                 current = public_url(urljoin(current, r.headers["location"]))
@@ -183,9 +205,11 @@ class JobBatch(BaseModel):
 class Context:
     """Per-run limits shared by all connectors."""
 
-    def __init__(self, known_urls=None, seen_mail=None, page_budget=None, delay=None, sample=False):
+    def __init__(self, known_urls=None, seen_mail=None, page_budget=None, delay=None, sample=False, deadline=None):
         # sample=True: a quick "Test source" read that touches only a few items.
         self.sample = sample
+        # Connectors stop paging and fetching once the search's time budget is used up.
+        self.deadline = deadline
         self.known_urls = set(known_urls or ())
         self.seen_mail = set(seen_mail or ())
         self.page_budget = settings.max_page_fetches_per_run if page_budget is None else page_budget
@@ -195,9 +219,12 @@ class Context:
         self.mail_ids = []
         self._last = 0.0
 
+    def out_of_time(self):
+        return self.deadline is not None and datetime.now(timezone.utc) >= self.deadline
+
     def fetch_page(self, client, url):
-        """Read one public page, or None once the budget is spent."""
-        if self.pages_fetched >= self.page_budget:
+        """Read one public page, or None once the page or time budget is spent."""
+        if self.pages_fetched >= self.page_budget or self.out_of_time():
             self.skipped_for_budget += 1
             return None
         wait = self.delay - (time.monotonic() - self._last)
@@ -277,7 +304,7 @@ def lever(client, value, ctx):
                     posted=iso(item.get("createdAt")),
                 )
             )
-        if len(batch) < 100 or skip >= 5000:
+        if len(batch) < 100 or skip >= 5000 or ctx.out_of_time():
             break
         skip += 100
     return jobs
@@ -294,6 +321,8 @@ def workable(client, value, ctx):
         if url in ctx.known_urls:
             jobs.append(ctx.partial(url))
             continue
+        if ctx.out_of_time():
+            break
         detail = client.get(f"https://apply.workable.com/api/v2/accounts/{slug}/jobs/{code}")
         detail.raise_for_status()
         d = detail.json()
@@ -361,7 +390,7 @@ def smartrecruiters(client, value, ctx):
                 )
             )
         offset += len(content)
-        if len(content) < 100 or offset >= data.get("totalFound", 0) or offset >= 1000:
+        if len(content) < 100 or offset >= data.get("totalFound", 0) or offset >= 1000 or ctx.out_of_time():
             break
     return jobs
 
@@ -728,6 +757,8 @@ def gmail(client, value, ctx):
     for msg in r.json().get("messages", []):
         if msg["id"] in ctx.seen_mail:
             continue
+        if ctx.out_of_time():
+            break
         response = client.get(
             f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{msg['id']}",
             headers=headers,
@@ -817,7 +848,7 @@ def imap_mailbox(client, value, ctx):
             key = f"imap:{creds['username']}:{folder}:{uid}"
             if key in ctx.seen_mail:
                 continue
-            if len(ctx.mail_ids) >= limit:
+            if len(ctx.mail_ids) >= limit or ctx.out_of_time():
                 break
             status, parts = box.uid("fetch", uid, "(RFC822)")
             if status != "OK" or not parts or not isinstance(parts[0], tuple):
