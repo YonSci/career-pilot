@@ -14,7 +14,7 @@ from .sources import collect, clean_url, Context
 from .relevance import screen, priority
 from .ai import match_job, write_package, ai_available
 from .auth import plan_limits
-from .notifications import notify, notify_digest
+from .notifications import notify, notify_digest, availability as notify_ready
 from .config import settings
 
 log = logging.getLogger(__name__)
@@ -274,6 +274,16 @@ def alertable(data, prefs):
     )
 
 
+class OutOfTime(Exception):
+    """Raised inside a worker when the search's time budget is spent before the model call."""
+
+
+def evaluate_within(deadline, profile, job, prefs):
+    if datetime.now(timezone.utc) >= deadline:
+        raise OutOfTime()
+    return match_job(profile, job, prefs)
+
+
 def evaluation_budget():
     plan = (current_user() or {}).get("plan", "free")
     return min(settings.max_matches_per_run, plan_limits(plan)["evaluations_per_run"])
@@ -398,11 +408,8 @@ def _run_scan(run_id):
                 for row in batch:
                     if datetime.now(timezone.utc) >= deadline:
                         break
-                    futures[pool.submit(contextvars.copy_context().run, match_job, verified_profile, row.data, prefs)] = row
-                if len(futures) < len(batch):
-                    result.setdefault("warnings", []).append(
-                        f"{len(batch) - len(futures)} postings were left for the next search because the time budget was used up."
-                    )
+                    futures[pool.submit(contextvars.copy_context().run, evaluate_within, deadline, verified_profile, row.data, prefs)] = row
+                skipped_for_time = len(batch) - len(futures)
                 done = 0
                 for future in as_completed(futures):
                     row = futures[future]
@@ -417,6 +424,10 @@ def _run_scan(run_id):
                         )
                         if match:
                             result["matched"] += 1
+                    except OutOfTime:
+                        # Queued after the budget ran out: left unevaluated, not counted as a failure.
+                        skipped_for_time += 1
+                        continue
                     except Exception:
                         db.rollback()
                         log.exception("Match evaluation failed for %s", row.data.get("title"))
@@ -427,17 +438,38 @@ def _run_scan(run_id):
                         )
                     result["progress"] = f"Evaluating {done} of {len(futures)}: " + row.data["title"]
                     put(db, "run", run.key, result)
+                if skipped_for_time:
+                    result.setdefault("warnings", []).append(
+                        f"{skipped_for_time} postings were left for the next search because the time budget was used up."
+                    )
         if len(candidates) > budget:
             result.setdefault("warnings", []).append(
                 f"{len(candidates) - budget} postings await evaluation in the next search (limit {budget} per run)."
             )
-        # Announce qualifying matches that have never been announced.
+        # Announce qualifying matches: never-announced ones, plus recent matches
+        # that an enabled channel has not received yet (channel linked later).
+        channels = prefs.get("notify_channels", [])
+        if not prefs.get("alerts_enabled") and channels:
+            result.setdefault("warnings", []).append(
+                "Alerts are switched off in Preferences, so no Telegram or email messages are sent. Turn on 'Send matching job alerts' to receive them."
+            )
         if prefs.get("alerts_enabled"):
-            announced = {r.data.get("job_id") for r in rows(db, "alert") if r.data.get("channel") == "inapp"}
-            fresh = [r for r in rows(db, "job") if r.id not in announced and alertable(r.data, prefs)]
+            announced = {}
+            for r in rows(db, "alert"):
+                announced.setdefault(r.data.get("job_id"), set()).add(r.data.get("channel"))
+            recent_cutoff = (datetime.now(timezone.utc) - timedelta(days=settings.alert_catchup_days)).isoformat()
+            ready_channels = [c for c in channels if notify_ready(db).get(c)]
+            fresh = []
+            for r in rows(db, "job"):
+                if not alertable(r.data, prefs):
+                    continue
+                sent = announced.get(r.id, set())
+                if "inapp" not in sent:
+                    fresh.append(r)
+                elif (r.data.get("evaluated") or "") >= recent_cutoff and any(c not in sent for c in ready_channels):
+                    fresh.append(r)
             fresh.sort(key=lambda r: -(r.data["match"]["score"]))
             fresh = fresh[: prefs["max_alerts_per_run"]]
-            channels = prefs.get("notify_channels", [])
             outcomes = {}
             if fresh and prefs.get("alert_mode") == "digest" and len(fresh) > 1:
                 outcomes = notify_digest(db, [(r.id, r.data, r.data["match"]) for r in fresh], channels)

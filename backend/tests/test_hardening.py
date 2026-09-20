@@ -156,6 +156,90 @@ def test_http_fetch_is_pinned_before_the_request_is_sent(monkeypatch):
     assert seen == []
 
 
+def test_connection_uses_the_same_resolution_that_was_validated(monkeypatch):
+    """Successive DNS answers differ (rebinding): the second answer must never be used."""
+    answers = iter([["93.184.216.34"], ["127.0.0.1"], ["127.0.0.1"]])
+    calls = []
+
+    def resolver(host):
+        calls.append(host)
+        return next(answers)
+
+    monkeypatch.setattr(sources, "resolve_host", resolver)
+    seen = []
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: seen.append(request.url.host) or httpx.Response(200, headers={"content-type": "text/html"}, content=b"<html><main>ok</main></html>")))
+    r = sources.safe_get(client, "https://example.org/x")
+    assert "ok" in r.text
+    assert calls == ["example.org"], "the host is resolved exactly once per hop"
+    assert seen == ["93.184.216.34"], "the connection uses the validated answer"
+
+
+def test_queued_evaluations_do_not_start_after_the_deadline(client, monkeypatch):
+    verified_profile(client)
+    for i in range(6):
+        client.post("/api/jobs", json={**JOB, "title": f"Data Scientist {i}", "url": f"https://example.org/jobs/{i}"})
+    monkeypatch.setattr(settings, "openai_api_key", "fake-test-key")
+    monkeypatch.setattr(settings, "evaluation_workers", 1)
+    monkeypatch.setattr(settings, "scan_time_budget_minutes", 1)
+    from career import service
+
+    real_now = service.datetime
+    started = []
+
+    class Clock(real_now):
+        @classmethod
+        def now(cls, tz=None):
+            # After the first evaluation starts, the clock jumps past any deadline.
+            base = real_now.now(tz)
+            return base + service.timedelta(hours=1) if started else base
+
+    monkeypatch.setattr(service, "datetime", Clock)
+
+    def slow_match(profile, job, prefs):
+        started.append(job["title"])
+        time.sleep(0.05)
+        return {"score": 50, "summary": "s", "requirements": [], "strengths": [], "gaps": [], "mode": "ai"}
+
+    monkeypatch.setattr(service, "match_job", slow_match)
+    client.post("/api/scan")
+    run = client.get("/api/state").json()["runs"][0]
+    assert run["status"] == "completed"
+    assert len(started) == 1, started
+    assert run["matched"] == 1 and any("5 postings were left" in w for w in run.get("warnings", []))
+    jobs = client.get("/api/state").json()["jobs"]
+    assert sum(1 for j in jobs if j["match"]) == 1 and all((j.get("match_attempts") or 0) == 0 for j in jobs)
+
+
+def test_channel_linked_later_still_receives_recent_matches(client, monkeypatch):
+    verified_profile(client)
+    for i in range(2):
+        client.post("/api/jobs", json={**JOB, "title": f"Data Scientist {i}", "url": f"https://example.org/jobs/{i}"})
+    monkeypatch.setattr(settings, "openai_api_key", "fake-test-key")
+    monkeypatch.setattr("career.service.match_job", lambda *a: {"score": 95, "summary": "s", "requirements": [], "strengths": [], "gaps": [], "mode": "ai"})
+    prefs = client.get("/api/state").json()["preferences"]
+    client.put("/api/preferences", json={**prefs, "alerts_enabled": True, "notify_channels": ["telegram"]})
+    client.post("/api/scan")  # telegram not configured yet: announced in-app only
+    state = client.get("/api/state").json()
+    assert state["inbox_unread"] == 2 and state["runs"][0]["delivered"]["telegram"] == "not_configured"
+    monkeypatch.setattr("career.notifications.availability", lambda db=None: {"telegram": True})
+    monkeypatch.setattr("career.service.notify_ready", lambda db=None: {"telegram": True})
+    monkeypatch.setattr("career.notifications.telegram_chat", lambda db=None: "1")
+    sent = []
+    monkeypatch.setattr("career.notifications.telegram_send", lambda chat, text, job_id=None: sent.append(job_id))
+    client.post("/api/scan")  # channel now ready: the recent matches are sent once
+    assert len(sent) == 2
+    client.post("/api/scan")
+    assert len(sent) == 2, "never resent"
+
+
+def test_alerts_off_is_explained(client, monkeypatch):
+    verified_profile(client)
+    prefs = client.get("/api/state").json()["preferences"]
+    client.put("/api/preferences", json={**prefs, "alerts_enabled": False, "notify_channels": ["telegram"]})
+    client.post("/api/scan")
+    assert any("switched off" in w for w in client.get("/api/state").json()["runs"][0]["warnings"])
+
+
 def test_time_budget_is_cooperative_inside_connectors(monkeypatch):
     from datetime import datetime, timezone, timedelta
 

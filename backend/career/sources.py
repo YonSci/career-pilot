@@ -46,9 +46,9 @@ def resolve_host(host):
         raise ValueError(f"The host {host} could not be resolved.")
 
 
-def public_url(url):
-    """Accept only http(s) URLs whose host resolves to public addresses.
-    Prevents a configured source from pointing the server at internal services."""
+def validated_addresses(url):
+    """Resolve the URL's host ONCE and validate every returned address.
+    Returns (url, addresses); addresses is empty for a literal-IP host that passed."""
     url = clean_url((url or "").strip())
     if not url:
         raise ValueError("Enter a full public http(s) address.")
@@ -57,9 +57,14 @@ def public_url(url):
     if host in ("localhost",) or host.endswith(".localhost") or host.endswith(".local") or host.endswith(".internal"):
         raise ValueError("Local or private addresses cannot be used as sources.")
     try:
-        candidates = [host] if ipaddress.ip_address(host) else []
+        ipaddress.ip_address(host)
+        literal = True
+        candidates = [host]
     except ValueError:
+        literal = False
         candidates = resolve_host(host)
+    if not candidates:
+        raise ValueError(f"The host {host} could not be resolved.")
     for address in candidates:
         try:
             ip = ipaddress.ip_address(address.split("%")[0])
@@ -67,7 +72,13 @@ def public_url(url):
             raise ValueError("The address could not be checked.")
         if not ip.is_global or ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
             raise ValueError("That address points to a private or local network and cannot be used as a source.")
-    return url
+    return url, ([] if literal else candidates)
+
+
+def public_url(url):
+    """Accept only http(s) URLs whose host resolves to public addresses.
+    Prevents a configured source from pointing the server at internal services."""
+    return validated_addresses(url)[0]
 
 
 def assert_public_peer(response):
@@ -95,15 +106,13 @@ def pinned_request(url):
     """Resolve and validate `url`, then return (pinned_url, headers, extensions)
     that connect to the validated address while keeping the hostname for the
     Host header and TLS verification. DNS cannot change the target afterwards."""
-    url = public_url(url)
+    url, addresses = validated_addresses(url)
+    if not addresses:
+        return url, {}, {}
     parsed = urlparse(url)
     host = parsed.hostname or ""
-    try:
-        ipaddress.ip_address(host)
-        return url, {}, {}
-    except ValueError:
-        pass
-    address = resolve_host(host)[0]
+    # Same resolution result that was validated: no second lookup can swap the target.
+    address = addresses[0]
     literal = f"[{address}]" if ":" in address else address
     netloc = literal + (f":{parsed.port}" if parsed.port else "")
     pinned = parsed._replace(netloc=netloc).geturl()

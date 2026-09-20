@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     scan_workers: int = 2
     # Sources still unread after this many minutes are deferred to the next search.
     scan_time_budget_minutes: int = 20
+    # A channel enabled later still receives matches evaluated within this many days.
+    alert_catchup_days: int = 7
     # Politeness limits for connectors that read individual public posting pages.
     max_page_fetches_per_run: int = 60
     fetch_delay_seconds: float = 1.0
