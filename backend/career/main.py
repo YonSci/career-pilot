@@ -62,7 +62,7 @@ async def lifespan(app):
         scheduler.shutdown()
 
 
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 app = FastAPI(title=settings.app_name, version=VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -167,6 +167,7 @@ def setup(db=Depends(db_session)):
         "app_name": settings.app_name,
         "needs_first_account": db.query(User).count() == 0,
         "invite_only": settings.invite_only,
+        "owner_email_fixed": bool(settings.owner_email),
     }
 
 
@@ -251,7 +252,7 @@ class PasswordChange(BaseModel):
 
 
 @app.put("/api/account/password")
-def change_password(body: PasswordChange, user: User = Depends(auth), db=Depends(db_session)):
+def change_password(body: PasswordChange, request: Request, user: User = Depends(auth), db=Depends(db_session)):
     if not accounts.verify_password(body.current, user.password_hash):
         raise HTTPException(422, "The current password is incorrect.")
     try:
@@ -260,6 +261,7 @@ def change_password(body: PasswordChange, user: User = Depends(auth), db=Depends
         raise HTTPException(422, str(e))
     user.password_hash = accounts.hash_password(body.new)
     db.commit()
+    accounts.destroy_user_sessions(db, user.id, keep_token=request.cookies.get(accounts.SESSION_COOKIE))
     return {"ok": True}
 
 
@@ -378,6 +380,7 @@ def admin_reset_password(id: str, _: User = Depends(admin), db=Depends(db_sessio
     temporary = pysecrets.token_urlsafe(9)
     user.password_hash = accounts.hash_password(temporary)
     db.commit()
+    accounts.destroy_user_sessions(db, user.id)
     return {"temporary_password": temporary}
 
 
@@ -749,6 +752,9 @@ async def telegram_webhook(request: Request, db=Depends(db_session)):
     if not settings.telegram_webhook_secret or not hmac.compare_digest(secret, settings.telegram_webhook_secret):
         raise HTTPException(401, "Invalid webhook.")
     data = await request.json()
+    if data.get("message"):
+        await run_in_threadpool(telegram.handle_message, db, data["message"])
+        return {"ok": True}
     callback = data.get("callback_query")
     if not callback:
         return {"ok": True}

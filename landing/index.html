@@ -56,6 +56,7 @@
   .nav-links { display: flex; gap: 26px; align-items: center; font-size: 0.93rem; font-weight: 500; }
   .nav-links a { text-decoration: none; color: var(--ink-2); }
   .nav-links a:hover { color: var(--ink); }
+  .nav-links .btn-primary, .nav-links .btn-primary:hover { color: #fff; }
   @media (max-width: 800px) { .nav-links .link { display: none; } }
 
   /* hero */
@@ -159,6 +160,8 @@
   .form { display: grid; gap: 10px; }
   .form input, .form textarea { width: 100%; padding: 13px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: #fff; font: inherit; font-size: 0.95rem; }
   .form input::placeholder, .form textarea::placeholder { color: rgba(255,255,255,.55); }
+  .form label { display: grid; gap: 6px; font-size: 0.82rem; font-weight: 600; color: rgba(255,255,255,.85); }
+  @media (max-width: 800px) { .nav .wrap { height: auto; padding: 10px 0; flex-wrap: wrap; gap: 10px; } .nav-links { gap: 10px; } .btn { padding: 10px 14px; font-size: 0.88rem; } }
   .form .ok { color: #cfe8d8; font-size: 0.9rem; }
   .form .err { color: #ffd2c2; font-size: 0.9rem; }
 
@@ -198,7 +201,7 @@
     <p class="note">Bring your own OpenAI key. Nothing is ever submitted to an employer on your behalf.</p>
   </div>
   <div class="demo" aria-label="Example match card">
-    <span class="float">Evaluated against 33 verified facts</span>
+    <span class="float">Illustrative example · evaluated against 33 verified facts</span>
     <div class="card">
       <div class="top">
         <div>
@@ -207,7 +210,7 @@
         </div>
         <div class="score"><b>84</b><small>MATCH</small></div>
       </div>
-      <div class="meta">Strong technical and domain match for data automation: 8+ years of data work, verified R, Python and SQL, dashboard delivery.</div>
+      <div class="meta">Example output. Strong technical and domain match for data automation: 8+ years of data work, verified R, Python and SQL, dashboard delivery.</div>
       <div class="req"><span class="met">MET</span><div>Proficiency in R or Stata <em>Evidence F33: verified R proficiency, plus Python and SQL</em></div></div>
       <div class="req"><span class="met">MET</span><div>Data visualisation skills <em>Evidence F12, F16: dashboards delivered for two programmes</em></div></div>
       <div class="req"><span class="unknown">UNKNOWN</span><div>Citizenship or permanent residence <em>Mandatory. Not in your evidence, so it is never assumed.</em></div></div>
@@ -232,7 +235,7 @@
   <div class="section-head">
     <span class="eyebrow">What it does</span>
     <h2>Discovery, explanation, alerts and drafting. All grounded in evidence.</h2>
-    <p class="lead">Most job tools rank titles by keywords. Career Pilot compares the actual requirements of each posting with facts you verified from your own CV, and shows its reasoning.</p>
+    <p class="lead">Most job tools rank titles by keywords. Career Pilot compares the actual requirements of each posting with facts you verified from your own CV, and shows its reasoning. Your first search, usually within an hour of signing up, is the moment it pays off.</p>
   </div>
   <div class="grid-3">
     <div class="feature"><div class="icon">◎</div><h3>Continuous discovery</h3><p>Every few hours it reads ReliefWeb, employer boards, your email alerts from LinkedIn, Devex or UNjobs, and any feed or careers page you add. Duplicates are merged, closed deadlines flagged.</p></div>
@@ -240,7 +243,7 @@
     <div class="feature"><div class="icon">✦</div><h3>Why you fit, and what is missing</h3><p>Strengths written in terms of your real projects, and gaps stated plainly, including eligibility criteria such as citizenship or language that your CV does not document.</p></div>
     <div class="feature"><div class="icon">➤</div><h3>Alerts where you are</h3><p>Matches above your threshold land in your inbox and on Telegram, with Interested and Skip buttons. One message per job or one digest per search; you choose.</p></div>
     <div class="feature"><div class="icon">✎</div><h3>Fact-checked application drafts</h3><p>When you click Prepare application, it drafts a tailored CV, cover letter and screening answers, then an independent review rejects any claim your evidence does not support. Export as DOCX and PDF.</p></div>
-    <div class="feature"><div class="icon">🔒</div><h3>Private by design</h3><p>Your own OpenAI key, encrypted at rest. Your workspace is yours alone. Nothing is submitted, no employer is contacted, no fact is invented.</p></div>
+    <div class="feature"><div class="icon">🔒</div><h3>Private by design</h3><p>Your own OpenAI key, encrypted at rest. Your workspace is yours alone. Nothing is submitted and no employer is contacted; every draft is checked against your verified facts and reviewed by you before use.</p></div>
   </div>
 </section>
 
@@ -265,7 +268,7 @@
       <p class="lead">Sources and suggestions are tuned for this sector: development agencies, research centres, NGOs and remote-first employers, with Africa-based and remote roles in focus.</p>
     </div>
     <ul>
-      <li><span class="check">✓</span><div><b>Never invents.</b> Every career claim in a draft traces to a fact you verified; the reviewer rejects the rest.</div></li>
+      <li><span class="check">✓</span><div><b>Evidence-checked drafts.</b> Every career claim must trace to a fact you verified; an independent review flags unsupported sentences for rewriting, and you review the result before use.</div></li>
       <li><span class="check">✓</span><div><b>Never submits.</b> You export documents and apply through the official channel. No automation of employer portals.</div></li>
       <li><span class="check">✓</span><div><b>Honest about eligibility.</b> Mandatory criteria your CV does not cover are shown as unknown, not hidden.</div></li>
       <li><span class="check">✓</span><div><b>Cost under your control.</b> AI usage runs on your key, with a cap per search and no re-evaluation of postings already seen.</div></li>
@@ -277,7 +280,7 @@
   <div class="section-head">
     <span class="eyebrow">Pricing</span>
     <h2>Free to start. Pay for depth when it earns its keep.</h2>
-    <p class="lead">The beta is free by invitation. These are the planned plans after the beta; beta members keep a founding discount.</p>
+    <p class="lead">The beta is free by invitation: every member gets the Beta plan below with their own OpenAI key. The paid plans are planned for after the beta and beta members keep a founding discount.</p>
   </div>
   <div class="pricing-note">◆ Regional pricing applies: about 40 to 50 percent lower for members in Africa and South Asia.</div>
   <div class="plans">
@@ -287,9 +290,9 @@
       <div class="for">Feel the value before paying anything.</div>
       <ul>
         <li>Manual jobs and 2 sources</li>
-        <li>10 AI evaluations a week</li>
-        <li>In-app inbox and keyword ranking</li>
-        <li>Verified evidence bank</li>
+        <li>10 AI evaluations per search, run by hand</li>
+        <li>1 application package a month</li>
+        <li>In-app inbox and verified evidence bank</li>
       </ul>
       <a class="btn btn-ghost" href="#invite">Request an invite</a>
     </div>
@@ -298,10 +301,10 @@
       <div class="price">$9<small> / month · $79 / year</small></div>
       <div class="for">Continuous search with alerts and drafting.</div>
       <ul>
-        <li>Unlimited sources, including email alerts</li>
-        <li>300 evaluations a month</li>
-        <li>Telegram and email alerts, scheduled searches</li>
-        <li>8 fact-checked application packages a month</li>
+        <li>Up to 50 sources, including email alerts</li>
+        <li>50 evaluations per scheduled search</li>
+        <li>Telegram and email alerts</li>
+        <li>8 evidence-checked application packages a month</li>
       </ul>
       <a class="btn btn-primary" href="#invite">Request an invite</a>
     </div>
@@ -310,7 +313,7 @@
       <div class="price">$19<small> / month</small></div>
       <div class="for">For an active search across many roles.</div>
       <ul>
-        <li>1,000 evaluations a month</li>
+        <li>Everything in Pro</li>
         <li>30 application packages a month</li>
         <li>Digest mode and priority processing</li>
         <li>Application history and exports</li>
@@ -319,13 +322,13 @@
     </div>
     <div class="plan">
       <div class="name">Bring your own key</div>
-      <div class="price">$4<small> / month</small></div>
+      <div class="price">$4<small> / month · free in the beta</small></div>
       <div class="for">Use your own OpenAI key; pay only for the platform.</div>
       <ul>
         <li>Everything in Pro Plus</li>
         <li>AI usage billed by OpenAI to you</li>
         <li>Full control of models and spend</li>
-        <li>What beta members use today</li>
+        <li>What every beta member has today</li>
       </ul>
       <a class="btn btn-ghost" href="#invite">Request an invite</a>
     </div>
@@ -357,9 +360,9 @@
       <p>We are onboarding a small cohort of professionals in data, climate, geospatial, agriculture and development roles. Tell us a line about your field and we will send an invitation code.</p>
     </div>
     <form class="form" id="waitlist" novalidate>
-      <input type="text" name="name" placeholder="Your name" autocomplete="name" />
-      <input type="email" name="email" placeholder="Email address" required autocomplete="email" />
-      <textarea name="note" rows="3" placeholder="Your field and what you are looking for (optional)"></textarea>
+      <label>Your name<input type="text" name="name" placeholder="e.g. Amina Bekele" autocomplete="name" /></label>
+      <label>Email address<input type="email" name="email" placeholder="you@example.org" required autocomplete="email" /></label>
+      <label>Your field and what you are looking for (optional)<textarea name="note" rows="3" placeholder="e.g. GIS analyst, looking for climate adaptation roles in East Africa"></textarea></label>
       <button class="btn btn-light" type="submit">Request an invite</button>
       <p class="ok" id="ok" hidden>Thank you. Your request is in; invitations go out in small batches.</p>
       <p class="err" id="err" hidden></p>

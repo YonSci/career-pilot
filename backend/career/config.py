@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     secret_key: str = ""
     # Set to false once the beta is over to allow open sign-up.
     invite_only: bool = True
+    # Optional: only this address may create the first (owner) account. Otherwise
+    # the first sign-up must present APP_TOKEN as the setup code.
+    owner_email: str = ""
     cors_origins: str = "http://localhost:8000,http://localhost:3000"
     public_url: str = "http://localhost:8000"
     openai_api_key: str = ""
@@ -25,6 +28,8 @@ class Settings(BaseSettings):
     max_matches_per_run: int = 50
     # Concurrent model calls during a search (evaluations and email extraction).
     evaluation_workers: int = 4
+    # Accounts whose scheduled searches may run at the same time.
+    scan_workers: int = 2
     # Politeness limits for connectors that read individual public posting pages.
     max_page_fetches_per_run: int = 60
     fetch_delay_seconds: float = 1.0

@@ -342,7 +342,7 @@ async function call<T = Record<string, unknown>>(path: string, method = "GET", b
   }
   return r.json() as Promise<T>;
 }
-function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_account: boolean; invite_only: boolean }; onDone: () => void }) {
+function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_account: boolean; invite_only: boolean; owner_email_fixed?: boolean }; onDone: () => void }) {
   const [mode, setMode] = useState<"login" | "signup">(setup.needs_first_account ? "signup" : "login");
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
@@ -403,6 +403,13 @@ function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_
                   <span className="field-help">The beta is invitation-only. Use the code you received.</span>
                 </label>
               )}
+              {mode === "signup" && setup.needs_first_account && !setup.owner_email_fixed && (
+                <label className="field">
+                  Setup code
+                  <input required type="password" autoComplete="off" value={invite} onChange={(e) => setInvite(e.target.value)} />
+                  <span className="field-help">The APP_TOKEN from the server's environment. It proves you deployed this instance.</span>
+                </label>
+              )}
               {error && <p className="connection-error">{error}</p>}
               <button className="button primary" disabled={busy}>
                 {busy ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}
@@ -432,7 +439,7 @@ function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_
   );
 }
 export default function Home() {
-  const [setup, setSetup] = useState<null | { app_name: string; needs_first_account: boolean; invite_only: boolean }>(null);
+  const [setup, setSetup] = useState<null | { app_name: string; needs_first_account: boolean; invite_only: boolean; owner_email_fixed?: boolean }>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [s, setS] = useState<State>(initial),
     [tab, setTab] = useState("opportunities"),
@@ -527,6 +534,11 @@ export default function Home() {
     try {
       await fn();
       await refresh();
+      if (selected) {
+        try {
+          setDetail(await call<Job>(`/jobs/${selected}`));
+        } catch {}
+      }
       if (message) toast.success(message);
     } catch (e) {
       const err = e as Error & { status?: number };
@@ -536,6 +548,20 @@ export default function Home() {
       setBusy("");
     }
   };
+  const evidenceDirty = JSON.stringify(profile) !== JSON.stringify(s.profile) && s.profile.facts.length > 0;
+  useEffect(() => {
+    if (!evidenceDirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [evidenceDirty]);
+  const lastCompleted = s.runs.find((r) => r.status === "completed");
+  const nextRun =
+    s.schedule.enabled && lastCompleted
+      ? new Date(new Date(lastCompleted.created).getTime() + (s.preferences.scan_interval_hours || 6) * 3600000)
+      : null;
   const verified = s.profile.facts.filter((f) => f.verified).length,
     active = s.runs.some(
       (r) =>
@@ -737,6 +763,20 @@ export default function Home() {
               </div>
             )}
           </div>
+          {tab === "opportunities" && (
+            <p className={"field-help " + (lastRun?.status === "failed" || lastRun?.sources?.some((x) => x.status === "failed") ? "danger-text" : "")}>
+              {active && lastRun?.progress
+                ? lastRun.progress
+                : lastRun?.status === "failed"
+                  ? lastRun.error
+                  : lastRun?.sources?.some((x) => x.status === "failed")
+                    ? "Last search: " + lastRun.sources.filter((x) => x.status === "failed").map((x) => x.name + " failed").join(", ") + ". See Job sources → Search activity."
+                    : lastCompleted
+                      ? `Last search ${new Date(lastCompleted.created).toLocaleString()} · ${lastCompleted.added ?? 0} new · ${lastCompleted.matched ?? 0} evaluated` +
+                        (nextRun ? ` · next automatic search ${nextRun.toLocaleString()}` : " · scheduled searches off")
+                      : "No search yet. Add sources, then run your first search."}
+            </p>
+          )}
           {(!s.connections.ai || !verified || !s.sources.length) && tab !== "admin" && (
             <div className="onboarding">
               <div className="onboarding-title">
@@ -1082,9 +1122,12 @@ export default function Home() {
                 <p className="muted-text">Upload or paste your CV to build your evidence bank.</p>
               )}
               {profile.facts.length > 0 && (
-                <button className="button primary" disabled={!!busy} onClick={() => act("profile", () => call("/profile", "PUT", profile), "Evidence saved")}>
-                  Save evidence
-                </button>
+                <div className="sticky-save">
+                  <span className={evidenceDirty ? "danger-text" : "muted-text"}>{evidenceDirty ? "Unsaved changes" : "All changes saved"}</span>
+                  <button className="button primary" disabled={!!busy || !evidenceDirty} onClick={() => act("profile", () => call("/profile", "PUT", profile), "Evidence saved")}>
+                    Save evidence
+                  </button>
+                </div>
               )}
             </section>
           </TabsContent>

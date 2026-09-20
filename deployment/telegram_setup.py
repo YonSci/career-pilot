@@ -45,7 +45,7 @@ def main():
             "setWebhook",
             url=settings.public_url.rstrip("/") + "/api/telegram/webhook",
             secret_token=settings.telegram_webhook_secret,
-            allowed_updates=["callback_query"],
+            allowed_updates=["message", "callback_query"],
         )
         print("Webhook registered. The server will no longer long-poll.")
     elif command == "polling":

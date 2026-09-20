@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from career.main import app
 from career.db import Session, Record, User, user_scope, user_snapshot
 
-OWNER = {"email": "owner@example.org", "password": "owner-password-123", "name": "Owner"}
+OWNER = {"email": "owner@example.org", "password": "owner-password-123", "name": "Owner", "invite": "test-token-only-0123456789abcdef"}
 CSRF = {"X-Requested-With": "CareerPilot"}
 
 
@@ -62,3 +62,11 @@ def signup_member(client, email="member@example.org", password="member-password-
     assert r.status_code == 200, r.text
     member.headers.update(CSRF)
     return member
+
+
+@pytest.fixture(autouse=True)
+def no_dns(monkeypatch):
+    """Tests never resolve real hostnames; example hosts count as public."""
+    from career import sources
+
+    monkeypatch.setattr(sources, "resolve_host", lambda host: ["93.184.216.34"])

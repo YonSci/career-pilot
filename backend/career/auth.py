@@ -17,10 +17,12 @@ CSRF_HEADER = "x-requested-with"
 
 # Plan entitlements. Invitees pay for their own AI usage (bring your own key),
 # so the beta plan is generous; free is a taste; pro is reserved for billing.
+# Keep these in step with the landing page's pricing section.
 PLANS = {
     "free": {"label": "Free", "sources": 2, "evaluations_per_run": 10, "packages_per_month": 1, "schedule": False},
-    "beta": {"label": "Beta", "sources": 20, "evaluations_per_run": 50, "packages_per_month": 30, "schedule": True},
-    "pro": {"label": "Pro", "sources": 50, "evaluations_per_run": 50, "packages_per_month": 60, "schedule": True},
+    "beta": {"label": "Beta (bring your own key)", "sources": 50, "evaluations_per_run": 50, "packages_per_month": 30, "schedule": True},
+    "pro": {"label": "Pro", "sources": 50, "evaluations_per_run": 50, "packages_per_month": 8, "schedule": True},
+    "pro_plus": {"label": "Pro Plus", "sources": 50, "evaluations_per_run": 50, "packages_per_month": 30, "schedule": True},
 }
 
 
@@ -108,6 +110,20 @@ def session_user(db, token):
     return db.get(User, row.user_id)
 
 
+def destroy_user_sessions(db, user_id, keep_token=None):
+    """Sign a user out everywhere (password reset/change), optionally keeping
+    the session that made the change."""
+    keep_key = "session:" + hashlib.sha256(keep_token.encode()).hexdigest() if keep_token else None
+    removed = 0
+    for row in db.query(Record).filter_by(user_id=user_id, kind="session").all():
+        if row.key == keep_key:
+            continue
+        db.delete(row)
+        removed += 1
+    db.commit()
+    return removed
+
+
 def destroy_session(db, token):
     if not token:
         return
@@ -186,6 +202,13 @@ def register(db, email, password, name="", invite=None):
         raise ValueError("An account with this email already exists. Sign in instead.")
     first = db.query(User).count() == 0
     invite_row = None
+    if first:
+        # The first account becomes the owner: require proof of deployment access.
+        if settings.owner_email:
+            if email != settings.owner_email.strip().lower():
+                raise ValueError("The owner account must use the configured owner email address.")
+        elif not (invite and hmac.compare_digest(invite.strip(), settings.app_token)):
+            raise ValueError("Enter the setup code (the server's APP_TOKEN) to create the owner account.")
     if not first and settings.invite_only:
         code = (invite or "").strip()
         invite_row = db.query(Record).filter_by(user_id=SYSTEM, key="invite:" + code).first() if code else None

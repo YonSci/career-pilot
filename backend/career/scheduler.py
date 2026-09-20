@@ -109,16 +109,30 @@ def due_users():
 
 
 def scan_loop(stop: threading.Event):
+    """Each due account runs in its own thread (a few at a time), so one slow
+    mailbox or feed cannot hold up everyone else's search."""
+    from concurrent.futures import ThreadPoolExecutor
+
     while not stop.is_set():
         try:
-            for user in due_users():
-                if stop.is_set():
-                    break
-                log.info("Scheduled search starting for %s", user["email"])
-                scheduled_scan(user)
+            users = due_users()
+            if users:
+                with ThreadPoolExecutor(max_workers=settings.scan_workers, thread_name_prefix="career-user-scan") as pool:
+                    for user in users:
+                        if stop.is_set():
+                            break
+                        log.info("Scheduled search starting for %s", user["email"])
+                        pool.submit(_guarded_scan, user)
         except Exception:
             log.exception("Scheduler cycle failed")
         stop.wait(CHECK_EVERY)
+
+
+def _guarded_scan(user):
+    try:
+        scheduled_scan(user)
+    except Exception:
+        log.exception("Scheduled search failed for %s", user.get("email"))
 
 
 class Scheduler:

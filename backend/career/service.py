@@ -381,10 +381,10 @@ def _run_scan(run_id):
             total = len(batch)
             result["progress"] = f"Evaluating 0 of {total}: " + batch[0].data["title"]
             put(db, "run", run.key, result)
-            context = contextvars.copy_context()
             with ThreadPoolExecutor(max_workers=settings.evaluation_workers) as pool:
+                # A Context can be entered by one thread at a time, so every task gets its own copy.
                 futures = {
-                    pool.submit(context.run, match_job, verified_profile, row.data, prefs): row
+                    pool.submit(contextvars.copy_context().run, match_job, verified_profile, row.data, prefs): row
                     for row in batch
                 }
                 done = 0

@@ -10,6 +10,8 @@ entry so the run can refresh last_seen without re-downloading or re-evaluating.
 
 import base64
 import contextvars
+import ipaddress
+import socket
 from concurrent.futures import ThreadPoolExecutor
 import email
 import email.policy
@@ -30,8 +32,62 @@ from .db import current_user
 from .ai import structured, ai_available
 
 log = logging.getLogger(__name__)
-USER_AGENT = "CareerPilot/0.2 personal-job-assistant"
+USER_AGENT = "CareerPilot/0.3 personal-job-assistant"
 UNAVAILABLE = "Description unavailable. Review the employer posting."
+MAX_PAGE_BYTES = 3_000_000
+MAX_REDIRECTS = 5
+
+
+def resolve_host(host):
+    """All addresses a hostname resolves to (patched in tests)."""
+    try:
+        return sorted({info[4][0] for info in socket.getaddrinfo(host, None)})
+    except socket.gaierror:
+        raise ValueError(f"The host {host} could not be resolved.")
+
+
+def public_url(url):
+    """Accept only http(s) URLs whose host resolves to public addresses.
+    Prevents a configured source from pointing the server at internal services."""
+    url = clean_url((url or "").strip())
+    if not url:
+        raise ValueError("Enter a full public http(s) address.")
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    if host in ("localhost",) or host.endswith(".localhost") or host.endswith(".local") or host.endswith(".internal"):
+        raise ValueError("Local or private addresses cannot be used as sources.")
+    try:
+        candidates = [host] if ipaddress.ip_address(host) else []
+    except ValueError:
+        candidates = resolve_host(host)
+    for address in candidates:
+        try:
+            ip = ipaddress.ip_address(address.split("%")[0])
+        except ValueError:
+            raise ValueError("The address could not be checked.")
+        if not ip.is_global or ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+            raise ValueError("That address points to a private or local network and cannot be used as a source.")
+    return url
+
+
+def safe_get(client, url, accept=None):
+    """GET with manual redirects so every hop is checked against the network
+    policy, and with a bound on the response size."""
+    current = public_url(url)
+    for _ in range(MAX_REDIRECTS + 1):
+        with client.stream("GET", current, follow_redirects=False, headers={"Accept": accept} if accept else None) as r:
+            if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
+                current = public_url(urljoin(current, r.headers["location"]))
+                continue
+            r.raise_for_status()
+            content = bytearray()
+            for chunk in r.iter_bytes():
+                content.extend(chunk)
+                if len(content) >= MAX_PAGE_BYTES:
+                    break
+            r.headers  # keep headers accessible after streaming
+            return httpx.Response(r.status_code, headers=r.headers, content=bytes(content[:MAX_PAGE_BYTES]), request=r.request)
+    raise ValueError("Too many redirects.")
 
 
 def plain(html):
@@ -126,8 +182,7 @@ class Context:
             time.sleep(wait)
         self._last = time.monotonic()
         self.pages_fetched += 1
-        r = client.get(url, follow_redirects=True)
-        r.raise_for_status()
+        r = safe_get(client, url)
         if "html" not in r.headers.get("content-type", "") and "xml" not in r.headers.get("content-type", ""):
             return None
         return page_text(r.text)[:60000]
@@ -480,9 +535,8 @@ def reliefweb_rss(client, query, ctx):
 
 def rss(client, value, ctx):
     """Any RSS or Atom feed of postings. Short entries are completed from the linked page."""
-    feed_url = http_url(value)
-    r = client.get(feed_url, follow_redirects=True)
-    r.raise_for_status()
+    feed_url = public_url(value)
+    r = safe_get(client, feed_url)
     try:
         channel_title, entries = parse_feed(r.content)
     except (ET.ParseError, ValueError):
@@ -535,9 +589,8 @@ def page(client, value, ctx):
     an AI pass identifies postings and their links; new postings are fetched."""
     if not ai_available():
         raise ValueError("Add your OpenAI API key before using career-page sources.")
-    listing_url = http_url(value)
-    r = client.get(listing_url, follow_redirects=True)
-    r.raise_for_status()
+    listing_url = public_url(value)
+    r = safe_get(client, listing_url)
     soup = BeautifulSoup(r.text, "html.parser")
     links = []
     for a in soup.find_all("a", href=True):
@@ -607,9 +660,11 @@ def extract_email_batch(items):
     Returns a flat list of jobs in the same order; failures raise."""
     if not items:
         return []
-    context = contextvars.copy_context()
+    # One context copy per task, taken in the calling thread so the user scope
+    # travels with it; a Context cannot be entered by two threads at once.
+    tasks = [(contextvars.copy_context(), text, posted) for text, posted in items]
     with ThreadPoolExecutor(max_workers=settings.evaluation_workers) as pool:
-        results = list(pool.map(lambda it: context.run(extract_email_jobs, it[0], it[1]), items))
+        results = list(pool.map(lambda t: t[0].run(extract_email_jobs, t[1], t[2]), tasks))
     return [job for batch in results for job in batch]
 
 
@@ -675,6 +730,9 @@ def gmail(client, value, ctx):
     return jobs
 
 
+IMAP_TIMEOUT = 30
+
+
 def _imap_quote(folder):
     return '"' + folder.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -690,7 +748,7 @@ def imap_mailbox(client, value, ctx):
     folder = (value or creds.get("folder") or "CareerPilot").strip()
     since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%d-%b-%Y")
     jobs, pending = [], []
-    with imaplib.IMAP4_SSL(creds["host"], int(creds.get("port") or 993)) as box:
+    with imaplib.IMAP4_SSL(creds["host"], int(creds.get("port") or 993), timeout=IMAP_TIMEOUT) as box:
         try:
             box.login(creds["username"], creds["password"])
         except imaplib.IMAP4.error:
@@ -734,7 +792,7 @@ def imap_mailbox(client, value, ctx):
 
 def imap_check(creds):
     """Verify mailbox credentials and folder without reading any message."""
-    with imaplib.IMAP4_SSL(creds["host"], int(creds.get("port") or 993)) as box:
+    with imaplib.IMAP4_SSL(creds["host"], int(creds.get("port") or 993), timeout=IMAP_TIMEOUT) as box:
         try:
             box.login(creds["username"], creds["password"])
         except imaplib.IMAP4.error:
@@ -812,7 +870,7 @@ def validate_source(kind, value):
     if kind in ("greenhouse", "lever", "workable", "smartrecruiters", "ashby"):
         board_slug(value)
     elif kind in ("rss", "page"):
-        http_url(value)
+        public_url(value)
     elif kind == "imap":
         if not (current_user() or {}).get("imap"):
             raise ValueError("Add your mailbox (IMAP) details under Account before using this source.")
