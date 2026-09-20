@@ -668,8 +668,10 @@ def gmail(client, value, ctx):
             return chunks
 
         text = "\n".join(text_parts(payload))[:60000]
-        jobs.extend(extract_email_jobs(text, iso(int(message.get("internalDate", 0) or 0))))
-        ctx.mail_ids.append(msg["id"])
+        pending.append((text, iso(int(message.get("internalDate", 0) or 0))))
+        pending_ids.append(msg["id"])
+    jobs.extend(extract_email_batch(pending))
+    ctx.mail_ids.extend(pending_ids)
     return jobs
 
 
