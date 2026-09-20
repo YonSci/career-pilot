@@ -1,7 +1,10 @@
 FROM node:22-bookworm-slim AS dashboard
 WORKDIR /src
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-RUN corepack enable && corepack prepare pnpm@11.25.0 --activate && pnpm install --frozen-lockfile
+RUN corepack enable && corepack prepare pnpm@11.25.0 --activate \
+    && pnpm config set fetch-timeout 600000 && pnpm config set fetch-retries 5 \
+    && pnpm config set network-concurrency 4 \
+    && pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm exec vite build --config vite.client.config.ts
 
