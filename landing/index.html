@@ -466,18 +466,11 @@
   fetch("/api/setup").then((r) => r.json()).then((s) => {
     const a = s.analytics;
     if (!a || a.provider !== "posthog" || !a.key) return;
-    const q = []; const stub = { _i: q };
-    ["init", "capture", "identify", "reset", "captureException", "register"].forEach((m) => { stub[m] = (...args) => q.push([m, args]); });
-    window.posthog = stub;
-    const sc = document.createElement("script"); sc.async = true; sc.src = a.host.replace(/\/$/, "") + "/static/array.js";
-    sc.onload = () => {
-      const real = window.posthog; if (!real || real === stub) return;
-      real.init(a.key, { api_host: a.host, person_profiles: "identified_only", capture_pageview: true, capture_pageleave: true, autocapture: true, capture_dead_clicks: true, capture_exceptions: true, respect_dnt: true, disable_session_recording: !a.replay,
-        session_recording: { maskAllInputs: true, maskTextSelector: "[data-ph-mask], .cp-msg" } });
-      q.forEach(([m, args]) => { if (typeof real[m] === "function") real[m](...args); });
-      real.capture("landing_page_viewed", { referrer: document.referrer || "", has_invite_param: new URLSearchParams(location.search).has("invite") });
-    };
-    document.head.appendChild(sc);
+    // Official PostHog snippet (queues calls until array.js loads).
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug getPageViewId captureTraceFeedback captureTraceMetric".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    window.posthog.init(a.key, { api_host: a.host, person_profiles: "identified_only", capture_pageview: true, capture_pageleave: true, autocapture: true, capture_dead_clicks: true, capture_exceptions: true, respect_dnt: true, disable_session_recording: !a.replay,
+      session_recording: { maskAllInputs: true, maskTextSelector: "[data-ph-mask], .cp-msg" } });
+    window.posthog.capture("landing_page_viewed", { referrer: document.referrer || "", has_invite_param: new URLSearchParams(location.search).has("invite") });
   }).catch(() => {});
   document.querySelectorAll('a[href="/app/"]').forEach((a) => a.addEventListener("click", () => track("signin_link_clicked", { location: a.closest("nav") ? "nav" : "page" })));
   document.querySelectorAll('a[href="#invite"]').forEach((a) => a.addEventListener("click", () => track("invite_cta_clicked", { location: a.closest("nav") ? "nav" : a.closest(".plan") ? "pricing" : "page" })));

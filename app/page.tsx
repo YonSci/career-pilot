@@ -330,48 +330,76 @@ type PostHog = {
   identify: (id: string, props?: Record<string, unknown>) => void;
   reset: () => void;
   captureException?: (error: unknown, props?: Record<string, unknown>) => void;
-  __loaded?: boolean;
+  __SV?: number;
 };
 const ph = (): PostHog | undefined => (window as unknown as { posthog?: PostHog }).posthog;
 // Session replay with every input masked and all personal text hidden; people
 // are identified by their anonymous account ID, never by email.
-function startAnalytics(config: Analytics) {
-  if (!config || config.provider !== "posthog" || !config.key || ph()?.__loaded) return;
-  const w = window as unknown as Record<string, unknown>;
-  const stub: Record<string, unknown> & { _i: unknown[] } = { _i: [] };
-  const methods = ["init", "capture", "identify", "reset", "captureException", "register", "opt_out_capturing", "get_distinct_id"];
-  methods.forEach((m) => {
-    stub[m] = (...args: unknown[]) => (stub._i as unknown[]).push([m, args]);
-  });
-  w.posthog = stub;
-  const script = document.createElement("script");
-  script.async = true;
-  script.src = config.host.replace(/\/$/, "") + "/static/array.js";
-  script.onload = () => {
-    const real = ph();
-    if (!real) return;
-    real.init(config.key, {
-      api_host: config.host,
-      person_profiles: "identified_only",
-      capture_pageview: true,
-      capture_pageleave: true,
-      autocapture: true,
-      capture_dead_clicks: true,
-      capture_exceptions: true,
-      respect_dnt: true,
-      disable_session_recording: !config.replay,
-      session_recording: {
-        maskAllInputs: true,
-        maskTextSelector: "[data-ph-mask], .fact, .posting-text, .assistant-msg, .package-dialog textarea, .package-dialog h3, .job-title, .company-name, .avatar, .admin-table td, details p",
-        blockSelector: "[data-ph-block]",
-      },
-    });
-    (stub._i as [string, unknown[]][]).forEach(([m, args]) => {
-      const fn = (real as unknown as Record<string, (...a: unknown[]) => void>)[m];
-      if (typeof fn === "function") fn.apply(real, args);
-    });
+// This mirrors PostHog's official snippet: a queue object on window.posthog that
+// array.js consumes on load (init calls in `_i`, method calls on the instance array).
+const POSTHOG_METHODS =
+  "init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug getPageViewId captureTraceFeedback captureTraceMetric".split(
+    " ",
+  );
+function installPosthogSnippet(host: string) {
+  const w = window as unknown as { posthog?: unknown };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const e: any = (w.posthog as any) || [];
+  if (e.__SV) return;
+  w.posthog = e;
+  e._i = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  e.init = function (token: string, config: any, name?: string) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const g = (t: any, m: string) => {
+      const parts = m.split(".");
+      if (parts.length === 2) {
+        t = t[parts[0]];
+        m = parts[1];
+      }
+      t[m] = function () {
+        // eslint-disable-next-line prefer-rest-params
+        t.push([m].concat(Array.prototype.slice.call(arguments, 0)));
+      };
+    };
+    const script = document.createElement("script");
+    script.type = "text/javascript";
+    script.crossOrigin = "anonymous";
+    script.async = true;
+    script.src = host.replace(/\/$/, "").replace(".i.posthog.com", "-assets.i.posthog.com") + "/static/array.js";
+    const first = document.getElementsByTagName("script")[0];
+    (first?.parentNode ?? document.head).insertBefore(script, first ?? null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let u: any = e;
+    if (name !== undefined) u = e[name] = [];
+    else name = "posthog";
+    u.people = u.people || [];
+    u.toString = (stub?: boolean) => "posthog" + (name !== "posthog" ? "." + name : "") + (stub ? "" : " (stub)");
+    u.people.toString = () => u.toString(1) + ".people (stub)";
+    POSTHOG_METHODS.forEach((m) => g(u, m));
+    e._i.push([token, config, name]);
   };
-  document.head.appendChild(script);
+  e.__SV = 1;
+}
+function startAnalytics(config: Analytics) {
+  if (!config || config.provider !== "posthog" || !config.key) return;
+  installPosthogSnippet(config.host);
+  ph()?.init(config.key, {
+    api_host: config.host,
+    person_profiles: "identified_only",
+    capture_pageview: true,
+    capture_pageleave: true,
+    autocapture: true,
+    capture_dead_clicks: true,
+    capture_exceptions: true,
+    respect_dnt: true,
+    disable_session_recording: !config.replay,
+    session_recording: {
+      maskAllInputs: true,
+      maskTextSelector: "[data-ph-mask], .fact, .posting-text, .assistant-msg, .package-dialog textarea, .package-dialog h3, .job-title, .company-name, .avatar, .admin-table td, details p",
+      blockSelector: "[data-ph-block]",
+    },
+  });
 }
 const track = (event: string, props?: Record<string, unknown>) => {
   try {
