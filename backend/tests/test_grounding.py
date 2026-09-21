@@ -64,7 +64,7 @@ def test_independent_review_blocks_unsupported_claims(monkeypatch):
         "missing_information": [],
     }
 
-    def structured(model, schema, *args):
+    def structured(model, schema, *args, **kw):
         return (
             Package(**data)
             if schema is Package

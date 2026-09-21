@@ -21,13 +21,18 @@ def ai_available():
     return bool(api_key())
 
 
-def structured(model, schema, instructions, data):
+MATCH_TIMEOUT = 120
+# Drafting a full package (CV, letter, answers) is a long generation; give it room.
+WRITE_TIMEOUT = 420
+
+
+def structured(model, schema, instructions, data, timeout=MATCH_TIMEOUT):
     key = api_key()
     if not key:
         raise ValueError(
             "Add your OpenAI API key under Account to enable AI analysis and application writing."
         )
-    client = OpenAI(api_key=key, timeout=120, max_retries=1)
+    client = OpenAI(api_key=key, timeout=timeout, max_retries=1)
     response = client.responses.parse(
         model=model,
         store=False,
@@ -158,7 +163,7 @@ def write_package(profile, job, match):
         "job": job_for_model(job),
         "match": match,
     }
-    package = structured(settings.write_model, Package, WRITE_INSTRUCTIONS, context)
+    package = structured(settings.write_model, Package, WRITE_INSTRUCTIONS, context, timeout=WRITE_TIMEOUT)
     validate_package(package, ids)
     review_notes = []
     for attempt in range(2):
@@ -167,6 +172,7 @@ def write_package(profile, job, match):
             QualityReview,
             REVIEW_INSTRUCTIONS,
             {"verified_facts": facts, "job": job_for_model(job), "application": package.model_dump()},
+            timeout=WRITE_TIMEOUT,
         )
         if not review.unsupported_claims:
             package.missing_information.extend(review.missing_requirements)
@@ -189,5 +195,6 @@ def write_package(profile, job, match):
                 "previous_draft": package.model_dump(),
                 "unsupported_claims": review.unsupported_claims,
             },
+            timeout=WRITE_TIMEOUT,
         )
         validate_package(package, ids)

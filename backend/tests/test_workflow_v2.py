@@ -175,7 +175,7 @@ def test_review_triggers_one_revision_before_accepting(monkeypatch):
     monkeypatch.setattr(settings, "openai_api_key", "fake")
     calls = []
 
-    def structured(model, schema, instructions, data):
+    def structured(model, schema, instructions, data, **kw):
         calls.append(schema.__name__)
         if schema is Package:
             text = "Invented a new satellite." if "REVISION" not in instructions else "Used satellite data."

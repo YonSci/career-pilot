@@ -212,11 +212,17 @@ def _prepare_application(job_id):
             )
         except Exception as e:
             log.exception("Preparation failed for %s", job_id)
-            message = (
-                str(e)
-                if isinstance(e, ValueError)
-                else "Preparation failed. Check server logs/configuration and retry."
-            )
+            name = type(e).__name__
+            if isinstance(e, ValueError):
+                message = str(e)
+            elif "Timeout" in name:
+                message = "The AI request timed out while drafting (the posting may be very long). Retry the preparation."
+            elif "RateLimit" in name:
+                message = "The AI provider rate-limited this account's key. Wait a minute and retry."
+            elif "Authentication" in name or "PermissionDenied" in name:
+                message = "The AI provider rejected this account's API key. Check the key under Account."
+            else:
+                message = f"Preparation failed ({name}). Retry; if it keeps failing, contact the owner."
             put(
                 db,
                 "application",
