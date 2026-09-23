@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
   Search,
@@ -160,6 +160,7 @@ type Account = {
   has_openai_key: boolean;
   has_imap: boolean;
   sponsored?: boolean;
+  organisation?: string;
   last_active?: string;
   created?: string;
 };
@@ -396,6 +397,8 @@ function startAnalytics(config: Analytics) {
     autocapture: true,
     capture_dead_clicks: true,
     capture_exceptions: true,
+    capture_performance: { web_vitals: true },
+    capture_heatmaps: true,
     respect_dnt: true,
     disable_session_recording: !config.replay,
     session_recording: {
@@ -410,6 +413,40 @@ const track = (event: string, props?: Record<string, unknown>) => {
     ph()?.capture(event, props);
   } catch {}
 };
+/** Feature flags from PostHog. Flags default to `fallback` until they have loaded, so
+ * the app never blocks on analytics; a flag that is off hides the feature everywhere. */
+function useFlags() {
+  const [flags, setFlags] = useState<Record<string, string | boolean>>({});
+  useEffect(() => {
+    let cancelled = false;
+    const read = () => {
+      const p = ph();
+      if (!p?.isFeatureEnabled || cancelled) return;
+      const next: Record<string, string | boolean> = {};
+      for (const key of FLAGS) {
+        try {
+          const v = p.getFeatureFlag?.(key);
+          if (v !== undefined) next[key] = v as string | boolean;
+        } catch {}
+      }
+      setFlags(next);
+    };
+    const t = setInterval(() => {
+      const p = ph();
+      if (p?.onFeatureFlags) {
+        clearInterval(t);
+        p.onFeatureFlags(read);
+        read();
+      }
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+  return (key: (typeof FLAGS)[number], fallback = true) => (key in flags ? flags[key] !== false && flags[key] !== "control" : fallback);
+}
+const FLAGS = ["assistant-widget", "sponsored-seats-banner"] as const;
 const trackError = (error: unknown, props?: Record<string, unknown>) => {
   try {
     ph()?.captureException?.(error, props);
@@ -669,7 +706,9 @@ export default function Home() {
       setPrefs({ ...defaults, ...d.preferences });
       setAccountName(d.user.name);
       try {
-        ph()?.identify(d.user.id, { plan: d.user.plan, role: d.user.role, has_key: d.connections.ai, sources: d.sources.length, verified_facts: d.profile.facts.filter((f) => f.verified).length });
+        ph()?.identify(d.user.id, { plan: d.user.plan, role: d.user.role, has_key: d.connections.ai, sponsored: !!d.user.sponsored, organisation: d.user.organisation || "", sources: d.sources.length, verified_facts: d.profile.facts.filter((f) => f.verified).length });
+        // Group analytics: members of the same institution or cohort are analysed together.
+        if (d.user.organisation) ph()?.group?.("organisation", d.user.organisation.toLowerCase().replace(/[^a-z0-9]+/g, "-"), { name: d.user.organisation });
       } catch {}
     } catch (e) {
       setSignedIn(false);
@@ -687,6 +726,16 @@ export default function Home() {
     const id = new URLSearchParams(window.location.search).get("job");
     if (id) setSelected(id);
   }, []);
+  // Web analytics: each dashboard tab counts as a page so paths show up in PostHog's web analytics view.
+  const firstTab = useRef(true);
+  useEffect(() => {
+    if (firstTab.current) {
+      firstTab.current = false;
+      return;
+    }
+    if (signedIn) track("$pageview", { $current_url: window.location.origin + "/app/" + tab, tab });
+  }, [tab, signedIn]);
+  const flag = useFlags();
   const [seenRun, setSeenRun] = useState<{ id: string; status: string } | null>(null);
   useEffect(() => {
     const r = s.runs[0];
@@ -1973,6 +2022,7 @@ export default function Home() {
                             <th>Evaluated</th>
                             <th>Packages</th>
                             <th>Telegram</th>
+                            <th>Organisation</th>
                             <th>Last active</th>
                             <th></th>
                           </tr>
@@ -2039,6 +2089,23 @@ export default function Home() {
                                 {u.packages}/{u.packages_requested}
                               </td>
                               <td>{u.telegram_linked ? "✓" : "—"}</td>
+                              <td>
+                                <input
+                                  className="cell-input"
+                                  defaultValue={u.organisation ?? ""}
+                                  placeholder="—"
+                                  maxLength={80}
+                                  aria-label={"Organisation for " + u.email}
+                                  onBlur={(e) => {
+                                    const v = e.target.value.trim();
+                                    if (v === (u.organisation ?? "")) return;
+                                    act("organisation", async () => {
+                                      await call(`/admin/users/${u.id}`, "PUT", { organisation: v });
+                                      setOverview(await call<Overview>("/admin/overview"));
+                                    });
+                                  }}
+                                />
+                              </td>
                               <td>{u.last_active ? new Date(u.last_active).toLocaleDateString() : "—"}</td>
                               <td>
                                 <button
@@ -2079,7 +2146,7 @@ export default function Home() {
           </footer>
         </main>
       </Tabs>
-      <Assistant />
+      {flag("assistant-widget") && <Assistant />}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="wide-dialog">
           <DialogHeader>

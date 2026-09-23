@@ -12,6 +12,7 @@ import traceback
 from datetime import datetime, timezone
 import httpx
 from .config import settings
+from .db import current_user
 
 log = logging.getLogger(__name__)
 LIB = "career-pilot-server"
@@ -31,12 +32,17 @@ def _post(payload):
 def capture(event, properties=None, distinct_id="server"):
     if not enabled():
         return
+    props = {"$lib": LIB, "$process_person_profile": distinct_id not in (None, "server"), **(properties or {})}
+    organisation = (current_user() or {}).get("organisation")
+    if organisation and distinct_id not in (None, "server"):
+        # Group analytics: the member's institution or cohort.
+        props.setdefault("$groups", {"organisation": organisation})
     payload = {
         "api_key": settings.posthog_key,
         "event": event,
         "distinct_id": distinct_id or "server",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "properties": {"$lib": LIB, "$process_person_profile": distinct_id not in (None, "server"), **(properties or {})},
+        "properties": props,
     }
     threading.Thread(target=_post, args=(payload,), daemon=True).start()
 

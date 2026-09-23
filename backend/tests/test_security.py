@@ -152,3 +152,23 @@ def test_unhandled_errors_return_generic_message(client, monkeypatch):
     raw.headers["Authorization"] = client.headers["Authorization"]
     r = raw.get(f"/api/applications/{app_id}/download")
     assert r.status_code == 500 and "secret internal detail" not in r.text and "Something went wrong" in r.text
+
+
+def test_organisation_for_group_analytics(client, monkeypatch):
+    member = signup_member(client)
+    uid = member.get("/api/auth/me").json()["id"]
+    r = client.put(f"/api/admin/users/{uid}", json={"organisation": "  UN Economic Commission for Africa "})
+    assert r.status_code == 200 and r.json()["organisation"] == "UN Economic Commission for Africa"
+    assert member.get("/api/auth/me").json()["organisation"] == "UN Economic Commission for Africa"
+    assert member.put(f"/api/admin/users/{uid}", json={"organisation": "x"}).status_code == 403
+    sent = []
+    monkeypatch.setattr(telemetry, "_post", lambda payload: sent.append(payload))
+    monkeypatch.setattr(settings, "posthog_key", "phc_x")
+    from career.db import user_scope
+
+    with user_scope({"id": uid, "email": "m@example.org", "role": "member", "plan": "beta", "openai_key": "", "imap": None, "sponsored": False, "organisation": "UNECA"}):
+        telemetry.capture("server_search_completed", {"seconds": 1}, distinct_id=uid)
+    import time
+    time.sleep(0.2)
+    assert sent[0]["properties"]["$groups"] == {"organisation": "UNECA"}
+    assert client.put(f"/api/admin/users/{uid}", json={"organisation": ""}).json()["organisation"] == ""

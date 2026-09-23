@@ -461,6 +461,8 @@ class UserEdit(BaseModel):
     plan: Literal["free", "beta", "sponsored", "pro", "pro_plus"] | None = None
     role: Literal["admin", "member"] | None = None
     sponsored: bool | None = None
+    # Institution or cohort the member belongs to (group analytics); empty clears it.
+    organisation: str | None = Field(default=None, max_length=80)
 
 
 @app.put("/api/admin/users/{id}")
@@ -470,6 +472,8 @@ def admin_edit_user(id: str, body: UserEdit, me: User = Depends(admin), db=Depen
         raise HTTPException(404, "User not found.")
     if body.sponsored is not None:
         accounts.set_sponsored(db, user, body.sponsored)
+    if body.organisation is not None:
+        user.settings = {**(user.settings or {}), "organisation": body.organisation.strip()}
     if body.plan:
         user.plan = body.plan
     if body.role:

@@ -1417,6 +1417,8 @@ h1 {
 
 /* Cohort (admin) table */
 .table-scroll { overflow-x: auto; }
+.cell-input { width: 9rem; padding: 4px 6px; border: 1px solid var(--border, #e6e3dc); border-radius: 6px; background: transparent; font: inherit; font-size: 0.85rem; }
+.cell-input:focus { outline: 2px solid var(--green, #2d6a4f); border-color: transparent; }
 .admin-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .admin-table th, .admin-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border, #e6e3dc); vertical-align: top; white-space: nowrap; }
 .admin-table th { font-weight: 600; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.7; }
