@@ -72,6 +72,13 @@ class Settings(BaseSettings):
     posthog_key: str = ""
     posthog_host: str = "https://eu.i.posthog.com"
     posthog_replay: bool = True
+    # Server-side health events (searches, drafts, failures) to PostHog.
+    posthog_server_events: bool = True
+    # Hard monthly cap on model calls made with the server's key (owner + sponsored
+    # members together). 0 = no cap. Set a matching limit on the OpenAI account too.
+    server_key_monthly_calls: int = 4000
+    # Per-account limits on manual AI actions per hour (evaluate, extract, test page sources, prepare).
+    ai_actions_per_hour: int = 40
 
     @property
     def public_https(self) -> bool:

@@ -16,6 +16,7 @@ from .ai import match_job, write_package, ai_available
 from .auth import plan_limits
 from .notifications import notify, notify_digest, availability as notify_ready
 from .config import settings
+from . import telemetry
 
 log = logging.getLogger(__name__)
 CLOSED = ("skipped", "applied", "archived")
@@ -196,6 +197,11 @@ def _prepare_application(job_id):
             )
             package = result["package"]
             review_notes = package.pop("review_notes", [])
+            telemetry.capture(
+                "server_application_drafted",
+                {"seconds": int((datetime.now(timezone.utc) - datetime.fromisoformat(approval.get("approved_at", now()))).total_seconds()), "revised": bool(review_notes), "answers": len(package.get("answers", []))},
+                distinct_id=current_user().get("id") if current_user() else "server",
+            )
             put(
                 db,
                 "application",
@@ -213,6 +219,9 @@ def _prepare_application(job_id):
         except Exception as e:
             log.exception("Preparation failed for %s", job_id)
             name = type(e).__name__
+            telemetry.capture("server_application_failed", {"error_type": name, "value_error": isinstance(e, ValueError)}, distinct_id=current_user().get("id") if current_user() else "server")
+            if not isinstance(e, ValueError):
+                telemetry.capture_exception(e, distinct_id=current_user().get("id") if current_user() else "server", where="prepare_application")
             if isinstance(e, ValueError):
                 message = str(e)
             elif "Timeout" in name:
@@ -240,8 +249,10 @@ def run_scan(run_id, user_id):
     with user_scope(snapshot):
         try:
             _run_scan(run_id)
-        except Exception:
+        except Exception as e:
             log.exception("Search failed (run %s)", run_id)
+            telemetry.capture("server_search_failed", {"error_type": type(e).__name__}, distinct_id=snapshot["id"])
+            telemetry.capture_exception(e, distinct_id=snapshot["id"], where="run_scan")
             # A new session remains usable even when the search transaction failed.
             with Session() as db:
                 run = get_row(db, run_id, "run")
@@ -521,3 +532,19 @@ def _run_scan(run_id):
         result.pop("progress", None)
         result["completed"] = now()
         put(db, "run", run.key, result)
+        telemetry.capture(
+            "server_search_completed",
+            {
+                "seconds": int((datetime.now(timezone.utc) - started_at).total_seconds()),
+                "trigger": result.get("trigger"),
+                "sources": len(result["sources"]),
+                "sources_failed": sum(1 for s in result["sources"] if s.get("status") == "failed"),
+                "sources_deferred": sum(1 for s in result["sources"] if s.get("status") == "deferred"),
+                "added": result["added"],
+                "matched": result["matched"],
+                "alerts": result["alerts"],
+                "warnings": len(result.get("warnings") or []),
+                "delivered": {k: v for k, v in (result.get("delivered") or {}).items() if k != "inapp"},
+            },
+            distinct_id=current_user().get("id") if current_user() else "server",
+        )

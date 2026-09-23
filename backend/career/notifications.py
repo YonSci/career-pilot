@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from .config import settings
 from .db import Record, put, read, now, current_user, current_user_id
 from .ai import ai_available, using_server_key
+from . import telemetry
 
 INAPP = "inapp"
 log = logging.getLogger(__name__)
@@ -245,6 +246,7 @@ def notify(db, job_id, job, match, channels):
             status = "delivery_unknown"
         put(db, "alert", row.key, {**row.data, "status": status})
         results[channel] = status
+        telemetry.capture("server_alert_delivery", {"channel": channel, "status": status, "digest": False}, distinct_id=current_user_id() or "server")
     return results
 
 

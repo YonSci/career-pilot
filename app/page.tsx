@@ -210,7 +210,7 @@ type Overview = {
   users: Metrics[];
   invites: { code: string; note: string; created: string; used_by: string | null }[];
   waitlist: { email: string; name: string; note: string; created: string }[];
-  totals: { users: number; activated: number; drafted: number; with_key: number; telegram: number; sponsored?: number; sponsored_seats?: number; sponsored_evaluations_this_month?: number };
+  totals: { users: number; activated: number; drafted: number; with_key: number; telegram: number; sponsored?: number; sponsored_seats?: number; sponsored_evaluations_this_month?: number; server_key_calls_this_month?: number; server_key_monthly_cap?: number };
   plans: Record<string, { label: string }>;
 };
 const defaults: Prefs = {
@@ -1892,6 +1892,7 @@ export default function Home() {
                       [overview.totals.drafted, "Drafting", "Prepared an application"],
                       [overview.totals.with_key, "With own AI key", overview.totals.telegram + " linked Telegram"],
                       [overview.totals.sponsored ?? 0, "Sponsored seats", `of ${overview.totals.sponsored_seats ?? 0} · ${overview.totals.sponsored_evaluations_this_month ?? 0} evaluations on your key this month`],
+                      [overview.totals.server_key_calls_this_month ?? 0, "Model calls on your key", `this month · cap ${overview.totals.server_key_monthly_cap || "none"}`],
                     ].map(([n, l, m]) => (
                       <div key={String(l)}>
                         <span>{l}</span>

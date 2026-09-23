@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 import json
 import secrets as pysecrets
 from contextlib import asynccontextmanager
@@ -17,7 +18,7 @@ from fastapi import (
     BackgroundTasks,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response as RawResponse
+from fastapi.responses import Response as RawResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
@@ -48,6 +49,8 @@ from .notifications import availability, test_alert
 from .scheduler import scheduler
 from . import telegram
 from . import assistant
+from . import telemetry
+from .ai import server_key_usage
 
 
 @asynccontextmanager
@@ -64,7 +67,7 @@ async def lifespan(app):
         scheduler.shutdown()
 
 
-VERSION = "0.3.7"
+VERSION = "0.3.8"
 app = FastAPI(title=settings.app_name, version=VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -89,6 +92,22 @@ async def private_responses(request: Request, call_next):
 def db_session():
     with Session() as db:
         yield db
+
+
+@app.exception_handler(Exception)
+async def unhandled(request: Request, exc: Exception):
+    """Unexpected errors: logged, reported to telemetry, and answered with a generic message."""
+    logging.getLogger(__name__).exception("Unhandled error on %s %s", request.method, request.url.path)
+    telemetry.capture_exception(exc, where=request.url.path)
+    return JSONResponse({"detail": "Something went wrong on the server. Please try again."}, status_code=500)
+
+
+def ai_action(user: User, action: str):
+    """Per-account hourly limit on manual actions that call the model."""
+    try:
+        accounts.throttle(f"ai:{user.id}", limit=settings.ai_actions_per_hour, window=3600)
+    except ValueError:
+        raise HTTPException(429, f"Too many AI requests in the last hour ({action}). Please wait a while.")
 
 
 # --- authentication -------------------------------------------------------------------
@@ -420,6 +439,8 @@ def admin_overview(_: User = Depends(admin), db=Depends(db_session)):
             "telegram": sum(1 for m in metrics if m["telegram_linked"]),
             "sponsored": sum(1 for m in metrics if m["sponsored"]),
             "sponsored_seats": settings.sponsored_seats if settings.openai_api_key else 0,
+            "server_key_calls_this_month": server_key_usage().get("calls", 0),
+            "server_key_monthly_cap": settings.server_key_monthly_calls,
             "sponsored_evaluations_this_month": sum(m["evaluations_this_month"] for m in metrics if m["sponsored"] and not m["has_openai_key"]),
         },
         "plans": accounts.PLANS,
@@ -582,8 +603,9 @@ def job_detail(id: str, db=Depends(db_session)):
     return {**item(row), "expired": expired(row.data)}
 
 
-@app.post("/api/profile/upload", dependencies=[Depends(auth)])
-async def upload(file: UploadFile = File(...), db=Depends(db_session)):
+@app.post("/api/profile/upload")
+async def upload(file: UploadFile = File(...), user: User = Depends(auth), db=Depends(db_session)):
+    ai_action(user, "CV extraction")
     data = await file.read(5_000_001)
     if len(data) > 5_000_000:
         raise HTTPException(413, "Maximum upload size is 5 MB.")
@@ -607,8 +629,9 @@ class TextImport(BaseModel):
     text: str = Field(min_length=40, max_length=100000)
 
 
-@app.post("/api/profile/text", dependencies=[Depends(auth)])
-def profile_text(body: TextImport, db=Depends(db_session)):
+@app.post("/api/profile/text")
+def profile_text(body: TextImport, user: User = Depends(auth), db=Depends(db_session)):
+    ai_action(user, "CV extraction")
     try:
         profile = extract_profile(body.text)
     except ValueError as e:
@@ -693,9 +716,11 @@ def delete_source(id: str, db=Depends(db_session)):
     return {"ok": True}
 
 
-@app.post("/api/sources/test", dependencies=[Depends(auth)])
-async def test_source(body: SourceInput):
+@app.post("/api/sources/test")
+async def test_source(body: SourceInput, user: User = Depends(auth)):
     """Read a source once with a small budget and report what came back."""
+    if body.kind in ("page", "gmail", "imap"):
+        ai_action(user, "source test")
     try:
         validate_source(body.kind, body.value)
         jobs, _ = await run_in_threadpool(
@@ -737,8 +762,9 @@ def decide(id: str, body: Decision, db=Depends(db_session)):
     return item(put(db, "job", row.key, {**row.data, "status": body.status}))
 
 
-@app.post("/api/jobs/{id}/match", dependencies=[Depends(auth)])
-def match(id: str, db=Depends(db_session)):
+@app.post("/api/jobs/{id}/match")
+def match(id: str, user: User = Depends(auth), db=Depends(db_session)):
+    ai_action(user, "match evaluation")
     row = row_or_404(db, id, "job")
     if not any(f.get("verified") for f in read(db, "profile", {}).get("facts", [])):
         raise HTTPException(409, "Upload and verify your CV evidence first.")
@@ -752,6 +778,7 @@ def match(id: str, db=Depends(db_session)):
 
 @app.post("/api/jobs/{id}/prepare")
 def prepare(id: str, tasks: BackgroundTasks, user: User = Depends(auth), db=Depends(db_session)):
+    ai_action(user, "application preparation")
     job = row_or_404(db, id, "job")
     if not ai_available():
         raise HTTPException(409, "Add your OpenAI API key under Account before preparing documents.")

@@ -27,6 +27,10 @@ services:
         value: "true"
       - key: SPONSORED_SEATS
         value: "20"          # first N members use OPENAI_API_KEY with the sponsored plan's caps
+      - key: SERVER_KEY_MONTHLY_CALLS
+        value: "4000"        # hard cap on model calls charged to OPENAI_API_KEY per month (owner + sponsored)
+      - key: AI_ACTIONS_PER_HOUR
+        value: "40"          # per-account limit on manual AI actions
       - key: APP_NAME
         value: Career Pilot
       - key: PUBLIC_URL
