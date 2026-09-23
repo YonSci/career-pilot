@@ -8,7 +8,7 @@ import httpx
 from sqlalchemy.exc import IntegrityError
 from .config import settings
 from .db import Record, put, read, now, current_user, current_user_id
-from .ai import ai_available
+from .ai import ai_available, using_server_key
 
 INAPP = "inapp"
 log = logging.getLogger(__name__)
@@ -55,6 +55,7 @@ def availability(db=None):
     return {
         "ai": ai_available(),
         "ai_own_key": bool(user.get("openai_key")),
+        "ai_sponsored": using_server_key() and user.get("role") != "admin",
         "email": bool(settings.smtp_host and settings.email_from and email_recipient()),
         "telegram": bool(settings.telegram_bot_token and telegram_chat(db)),
         "telegram_bot": bool(settings.telegram_bot_token),

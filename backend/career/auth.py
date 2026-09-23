@@ -19,10 +19,12 @@ CSRF_HEADER = "x-requested-with"
 # so the beta plan is generous; free is a taste; pro is reserved for billing.
 # Keep these in step with the landing page's pricing section.
 PLANS = {
-    "free": {"label": "Free", "sources": 2, "evaluations_per_run": 10, "packages_per_month": 1, "schedule": False},
-    "beta": {"label": "Beta (bring your own key)", "sources": 50, "evaluations_per_run": 50, "packages_per_month": 30, "schedule": True},
-    "pro": {"label": "Pro", "sources": 50, "evaluations_per_run": 50, "packages_per_month": 8, "schedule": True},
-    "pro_plus": {"label": "Pro Plus", "sources": 50, "evaluations_per_run": 50, "packages_per_month": 30, "schedule": True},
+    "free": {"label": "Free", "sources": 2, "evaluations_per_run": 10, "evaluations_per_month": None, "packages_per_month": 1, "schedule": False},
+    "beta": {"label": "Beta (bring your own key)", "sources": 50, "evaluations_per_run": 50, "evaluations_per_month": None, "packages_per_month": 30, "schedule": True},
+    # Sponsored members run on the owner's key, so their monthly usage is capped.
+    "sponsored": {"label": "Beta (AI included)", "sources": 10, "evaluations_per_run": 25, "evaluations_per_month": 300, "packages_per_month": 5, "schedule": True},
+    "pro": {"label": "Pro", "sources": 50, "evaluations_per_run": 50, "evaluations_per_month": None, "packages_per_month": 8, "schedule": True},
+    "pro_plus": {"label": "Pro Plus", "sources": 50, "evaluations_per_run": 50, "evaluations_per_month": None, "packages_per_month": 30, "schedule": True},
 }
 
 
@@ -214,12 +216,19 @@ def register(db, email, password, name="", invite=None):
         invite_row = db.query(Record).filter_by(user_id=SYSTEM, key="invite:" + code).first() if code else None
         if not invite_row or invite_row.data.get("used_by"):
             raise ValueError("A valid invite code is required during the beta.")
+    sponsored = (
+        not first
+        and settings.sponsored_seats > 0
+        and bool(settings.openai_api_key)
+        and sponsored_count(db) < settings.sponsored_seats
+    )
     user = User(
         email=email,
         name=(name or "").strip()[:200],
         password_hash=hash_password(password),
         role="admin" if first else "member",
-        plan="beta",
+        plan="sponsored" if sponsored else "beta",
+        settings={"sponsored": True} if sponsored else {},
     )
     db.add(user)
     db.commit()
@@ -228,6 +237,27 @@ def register(db, email, password, name="", invite=None):
     if invite_row:
         put(db, "invite", invite_row.key, {**invite_row.data, "used_by": user.id, "used_at": now()}, user_id=SYSTEM)
     return user
+
+
+def sponsored_count(db):
+    return sum(1 for u in db.query(User).all() if (u.settings or {}).get("sponsored"))
+
+
+def set_sponsored(db, user: User, on: bool):
+    """Owner toggle. Sponsoring moves a Free/Beta member to the sponsored plan;
+    removing it returns them to Beta (their own key, if any, keeps working)."""
+    user.settings = {**(user.settings or {}), "sponsored": bool(on)}
+    if on and user.plan in ("free", "beta"):
+        user.plan = "sponsored"
+    elif not on and user.plan == "sponsored":
+        user.plan = "beta"
+    db.commit()
+    return user
+
+
+def evaluations_this_month(db):
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    return sum(1 for j in rows(db, "job") if (j.data.get("evaluated") or "").startswith(month))
 
 
 def claim_legacy_records(db, user: User):
@@ -286,6 +316,7 @@ def user_metrics(db, user: User):
         "telegram_linked": bool(telegram.get("chat_id")),
         "activated": verified > 0 and len(sources) > 0,
         "drafted": any(a.data.get("package") for a in apps),
+        "evaluations_this_month": sum(1 for j in jobs if (j.data.get("evaluated") or "").startswith(datetime.now(timezone.utc).strftime("%Y-%m"))),
     }
 
 

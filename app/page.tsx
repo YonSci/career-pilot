@@ -159,6 +159,7 @@ type Account = {
   plan: string;
   has_openai_key: boolean;
   has_imap: boolean;
+  sponsored?: boolean;
   last_active?: string;
   created?: string;
 };
@@ -168,8 +169,10 @@ type Plan = {
   sources: number;
   evaluations_per_run: number;
   packages_per_month: number;
+  evaluations_per_month?: number | null;
   schedule: boolean;
   packages_used: number;
+  evaluations_used?: number;
 };
 type State = {
   user: Account;
@@ -191,6 +194,7 @@ type State = {
   suggested_sources: Suggested[];
 };
 type Metrics = Account & {
+  evaluations_this_month?: number;
   verified_facts: number;
   sources: number;
   searches: number;
@@ -206,7 +210,7 @@ type Overview = {
   users: Metrics[];
   invites: { code: string; note: string; created: string; used_by: string | null }[];
   waitlist: { email: string; name: string; note: string; created: string }[];
-  totals: { users: number; activated: number; drafted: number; with_key: number; telegram: number };
+  totals: { users: number; activated: number; drafted: number; with_key: number; telegram: number; sponsored?: number; sponsored_seats?: number; sponsored_evaluations_this_month?: number };
   plans: Record<string, { label: string }>;
 };
 const defaults: Prefs = {
@@ -231,7 +235,7 @@ const defaults: Prefs = {
   location_mode: "soft",
   scan_interval_hours: 6,
 };
-const emptyAccount: Account = { id: "", email: "", name: "", role: "member", plan: "beta", has_openai_key: false, has_imap: false };
+const emptyAccount: Account = { id: "", email: "", name: "", role: "member", plan: "beta", has_openai_key: false, has_imap: false, sponsored: false };
 const initial: State = {
   user: emptyAccount,
   plan: { id: "beta", label: "Beta", sources: 20, evaluations_per_run: 50, packages_per_month: 30, schedule: true, packages_used: 0 },
@@ -529,7 +533,7 @@ function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_
           <section className="panel">
             <h2>What this is</h2>
             <p>A personal job-search assistant. It collects postings from sources you choose, explains how each one matches the CV facts you verified, alerts you, and drafts applications only when you ask.</p>
-            <p>You bring your own OpenAI API key; nothing is ever submitted to employers on your behalf.</p>
+            <p>{(setup as { sponsored_seats_left?: number }).sponsored_seats_left ? "Early members get AI usage included; later members bring their own OpenAI key." : "You bring your own OpenAI key."} Nothing is ever submitted to employers on your behalf.</p>
             <p className="field-help">
               <a href="/">About Career Pilot</a> · <a href="/privacy.html" target="_blank" rel="noreferrer">Privacy</a> · <a href="/terms.html" target="_blank" rel="noreferrer">Terms</a>
             </p>
@@ -1022,7 +1026,7 @@ export default function Home() {
                 </div>
               </div>
               {[
-                [s.connections.ai, "Add your OpenAI key", () => setTab("account")],
+                [s.connections.ai, s.connections.ai_sponsored ? "AI included in your seat" : "Add your OpenAI key", () => setTab("account")],
                 [verified > 0, "Verify your CV", () => setTab("profile")],
                 [s.sources.length > 0, "Add job sources", () => setTab("sources")],
               ].map(([done, label, action], i) => (
@@ -1699,10 +1703,17 @@ export default function Home() {
                   <h2>
                     <KeyRound size={18} /> OpenAI API key
                   </h2>
-                  <span className={"tag " + (s.user.has_openai_key ? "tag-green" : isAdmin && s.connections.ai ? "tag-green" : "")}>
-                    {s.user.has_openai_key ? "Your key is set" : isAdmin && s.connections.ai ? "Using the server key" : "Not set"}
+                  <span className={"tag " + (s.user.has_openai_key ? "tag-green" : s.connections.ai ? "tag-green" : "")}>
+                    {s.user.has_openai_key ? "Your key is set" : isAdmin && s.connections.ai ? "Using the server key" : s.connections.ai_sponsored ? "AI included in your beta seat" : "Not set"}
                   </span>
-                  <p className="field-help">Evaluations and drafts run on your own key, so you pay OpenAI directly for what you use. The key is stored encrypted and never shown again.</p>
+                  {s.connections.ai_sponsored ? (
+                    <p className="field-help">
+                      Your seat includes AI usage paid by the founder: up to {s.plan.evaluations_per_run} evaluations per search, {s.plan.evaluations_per_month ?? "unlimited"} per month
+                      {typeof s.plan.evaluations_used === "number" ? ` (${s.plan.evaluations_used} used this month)` : ""} and {s.plan.packages_per_month} application packages a month. Add your own key below at any time to lift those limits.
+                    </p>
+                  ) : (
+                    <p className="field-help">Evaluations and drafts run on your own key, so you pay OpenAI directly for what you use. The key is stored encrypted and never shown again.</p>
+                  )}
                   <label className="field">
                     API key
                     <input type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" />
@@ -1879,7 +1890,8 @@ export default function Home() {
                       [overview.totals.users, "Accounts", "In the beta"],
                       [overview.totals.activated, "Activated", "Verified CV and a source"],
                       [overview.totals.drafted, "Drafting", "Prepared an application"],
-                      [overview.totals.with_key, "With AI key", overview.totals.telegram + " linked Telegram"],
+                      [overview.totals.with_key, "With own AI key", overview.totals.telegram + " linked Telegram"],
+                      [overview.totals.sponsored ?? 0, "Sponsored seats", `of ${overview.totals.sponsored_seats ?? 0} · ${overview.totals.sponsored_evaluations_this_month ?? 0} evaluations on your key this month`],
                     ].map(([n, l, m]) => (
                       <div key={String(l)}>
                         <span>{l}</span>
@@ -1995,11 +2007,33 @@ export default function Home() {
                                   </SelectContent>
                                 </Select>
                               </td>
-                              <td>{u.has_openai_key ? "✓" : "—"}</td>
+                              <td>
+                                {u.has_openai_key ? "own" : u.sponsored ? "sponsored" : "—"}
+                                {u.role !== "admin" && (
+                                  <>
+                                    <br />
+                                    <button
+                                      className="text-button"
+                                      onClick={() =>
+                                        act("sponsor", async () => {
+                                          await call(`/admin/users/${u.id}`, "PUT", { sponsored: !u.sponsored });
+                                          setOverview(await call<Overview>("/admin/overview"));
+                                        })
+                                      }
+                                    >
+                                      {u.sponsored ? "Unsponsor" : "Sponsor"}
+                                    </button>
+                                  </>
+                                )}
+                              </td>
                               <td>{u.verified_facts}</td>
                               <td>{u.sources}</td>
                               <td>{u.searches}</td>
-                              <td>{u.evaluated}</td>
+                              <td>
+                                {u.evaluated}
+                                <br />
+                                <small>{u.evaluations_this_month ?? 0} this month</small>
+                              </td>
                               <td>
                                 {u.packages}/{u.packages_requested}
                               </td>

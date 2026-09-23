@@ -25,6 +25,8 @@ services:
         value: "true"
       - key: INVITE_ONLY
         value: "true"
+      - key: SPONSORED_SEATS
+        value: "20"          # first N members use OPENAI_API_KEY with the sponsored plan's caps
       - key: APP_NAME
         value: Career Pilot
       - key: PUBLIC_URL

@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     # Optional: only this address may create the first (owner) account. Otherwise
     # the first sign-up must present APP_TOKEN as the setup code.
     owner_email: str = ""
+    # The first N members to register use the server's OpenAI key (sponsored
+    # seats) with the "sponsored" plan's monthly caps. 0 disables sponsoring.
+    sponsored_seats: int = 20
     cors_origins: str = "http://localhost:8000,http://localhost:3000"
     public_url: str = "http://localhost:8000"
     openai_api_key: str = ""

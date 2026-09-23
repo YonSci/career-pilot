@@ -290,9 +290,15 @@ def evaluate_within(deadline, profile, job, prefs):
     return match_job(profile, job, prefs)
 
 
-def evaluation_budget():
-    plan = (current_user() or {}).get("plan", "free")
-    return min(settings.max_matches_per_run, plan_limits(plan)["evaluations_per_run"])
+def evaluation_budget(db=None):
+    plan = plan_limits((current_user() or {}).get("plan", "free"))
+    budget = min(settings.max_matches_per_run, plan["evaluations_per_run"])
+    monthly = plan.get("evaluations_per_month")
+    if monthly is not None and db is not None:
+        from .auth import evaluations_this_month
+
+        budget = max(0, min(budget, monthly - evaluations_this_month(db)))
+    return budget
 
 
 def _run_scan(run_id):
@@ -399,8 +405,12 @@ def _run_scan(run_id):
             and not in_backoff(r.data)
         ]
         candidates.sort(key=lambda r: priority(r.data))
-        budget = evaluation_budget()
+        budget = evaluation_budget(db)
         batch = candidates[:budget]
+        if candidates and budget == 0:
+            result.setdefault("warnings", []).append(
+                "This month's included AI evaluations are used up. Add your own OpenAI key under Account to continue, or wait for next month."
+            )
         verified_profile = profile if any(f.get("verified") for f in profile.get("facts", [])) else None
         if batch and verified_profile:
             # Model calls run a few at a time; the database is written from this thread only.

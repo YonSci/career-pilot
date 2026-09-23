@@ -64,7 +64,7 @@ async def lifespan(app):
         scheduler.shutdown()
 
 
-VERSION = "0.3.6"
+VERSION = "0.3.7"
 app = FastAPI(title=settings.app_name, version=VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -170,6 +170,7 @@ def setup(db=Depends(db_session)):
         "needs_first_account": db.query(User).count() == 0,
         "invite_only": settings.invite_only,
         "owner_email_fixed": bool(settings.owner_email),
+        "sponsored_seats_left": max(0, settings.sponsored_seats - accounts.sponsored_count(db)) if settings.openai_api_key else 0,
         "analytics": (
             {"provider": "posthog", "key": settings.posthog_key, "host": settings.posthog_host, "replay": settings.posthog_replay}
             if settings.posthog_key
@@ -417,6 +418,9 @@ def admin_overview(_: User = Depends(admin), db=Depends(db_session)):
             "drafted": sum(1 for m in metrics if m["drafted"]),
             "with_key": sum(1 for m in metrics if m["has_openai_key"]),
             "telegram": sum(1 for m in metrics if m["telegram_linked"]),
+            "sponsored": sum(1 for m in metrics if m["sponsored"]),
+            "sponsored_seats": settings.sponsored_seats if settings.openai_api_key else 0,
+            "sponsored_evaluations_this_month": sum(m["evaluations_this_month"] for m in metrics if m["sponsored"] and not m["has_openai_key"]),
         },
         "plans": accounts.PLANS,
     }
@@ -433,8 +437,9 @@ def admin_invites(body: InviteRequest, _: User = Depends(admin), db=Depends(db_s
 
 
 class UserEdit(BaseModel):
-    plan: Literal["free", "beta", "pro", "pro_plus"] | None = None
+    plan: Literal["free", "beta", "sponsored", "pro", "pro_plus"] | None = None
     role: Literal["admin", "member"] | None = None
+    sponsored: bool | None = None
 
 
 @app.put("/api/admin/users/{id}")
@@ -442,6 +447,8 @@ def admin_edit_user(id: str, body: UserEdit, me: User = Depends(admin), db=Depen
     user = db.get(User, id)
     if not user:
         raise HTTPException(404, "User not found.")
+    if body.sponsored is not None:
+        accounts.set_sponsored(db, user, body.sponsored)
     if body.plan:
         user.plan = body.plan
     if body.role:
@@ -546,7 +553,7 @@ def state(user: User = Depends(auth), db=Depends(db_session)):
     limits = accounts.plan_limits(user.plan)
     return {
         "user": user.public(),
-        "plan": {"id": user.plan, **limits, "packages_used": accounts.packages_this_month(db)},
+        "plan": {"id": user.plan, **limits, "packages_used": accounts.packages_this_month(db), "evaluations_used": accounts.evaluations_this_month(db)},
         "app_name": settings.app_name,
         "profile": read(db, "profile", Profile().model_dump()),
         "preferences": {**Preferences().model_dump(), **read(db, "preferences", {})},

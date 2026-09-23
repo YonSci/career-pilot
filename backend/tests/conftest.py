@@ -10,6 +10,7 @@ os.environ.update(
     OPENAI_API_KEY="",
     TASK_QUEUE="background",
     SCHEDULER_ENABLED="false",
+    SPONSORED_SEATS="0",
     FETCH_DELAY_SECONDS="0",
 )
 import pytest

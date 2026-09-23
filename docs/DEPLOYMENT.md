@@ -83,3 +83,10 @@ What is captured: page views, autocaptured clicks, dead clicks, JavaScript excep
 | Other | `telegram_link_started`, `assistant_question_asked` |
 
 Suggested funnel in PostHog: `landing_page_viewed` → `signup_completed` → `profile_completed` → `job_search_completed` → `job_result_opened` → `job_saved` → `application_created`. Members are identified by their account ID with plan, role, `has_key`, `sources` and `verified_facts` as person properties; no email or name is sent. Session replay masks all inputs and hides evidence, postings, drafts, names, emails and assistant text.
+
+
+## Sponsored seats (AI included for early members)
+
+`SPONSORED_SEATS` (default 20) is the number of members who, in registration order, use the server's `OPENAI_API_KEY` instead of bringing their own. They are placed on the **sponsored** plan: 10 sources, 25 evaluations per search, 300 evaluations per month, 5 application packages per month, scheduled searches allowed. When the monthly evaluations are used up, searches still collect postings but stop evaluating until the next month, with a message that explains it. A member who adds their own key is no longer billed to the server key and keeps the sponsored plan's caps unless the owner changes the plan.
+
+The Cohort tab shows a "Sponsored seats" tile with how many evaluations ran on your key this month, and a Sponsor / Unsponsor toggle per member. Rough cost per sponsored member at full usage: 300 evaluations ≈ 6 to 18 USD plus 5 packages ≈ 5 USD per month; most members use far less.

@@ -16,7 +16,7 @@ Career Pilot is a personal job-search assistant for careers in data science, AI,
 
 # Getting started (first hour)
 1. Create an account with an invitation code (the beta is invitation-only). Request one on the landing page; the owner sends invitation links.
-2. Account tab: paste an OpenAI API key (platform.openai.com → API keys). Evaluations and drafts run on the member's own key ("bring your own key"); typical cost is 1 to 3 US dollars per search of 50 postings, billed by OpenAI. The key is verified, stored encrypted, and can be removed any time.
+2. Account tab: the first beta members have AI usage included on the founder's key ("AI included in your beta seat": up to 25 evaluations per search, 300 per month, 5 application packages a month). Other members paste an OpenAI API key (platform.openai.com → API keys); evaluations and drafts then run on their own key, typical cost 1 to 3 US dollars per search of 50 postings, billed by OpenAI. Anyone can add their own key at any time to lift the included limits. Keys are verified, stored encrypted, and can be removed any time.
 3. My evidence tab: upload a CV (DOCX, text PDF, TXT, Markdown, up to 5 MB) or paste text. Facts are extracted with exact source quotes. Tick "verified" for true facts (Select all after reviewing), edit wrong ones, then Save evidence. Only verified facts are used for matching and drafting.
 4. Job sources tab: add sources. Suggested sources are one click. Use "Test source" to see what a source returns before saving.
 5. Preferences tab: keywords, locations, contract types, minimum alert score (default 70), alert channels, delivery mode (per job or digest), scheduled searches and interval.

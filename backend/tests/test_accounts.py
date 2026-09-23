@@ -181,3 +181,45 @@ def test_setup_exposes_analytics_only_when_configured(client, monkeypatch):
     monkeypatch.setattr(settings, "posthog_key", "phc_test")
     a = client.get("/api/setup").json()["analytics"]
     assert a == {"provider": "posthog", "key": "phc_test", "host": "https://eu.i.posthog.com", "replay": True}
+
+
+def test_first_members_are_sponsored_and_capped(client, monkeypatch):
+    monkeypatch.setattr(settings, "openai_api_key", "server-key")
+    monkeypatch.setattr(settings, "sponsored_seats", 1)
+    assert client.get("/api/setup").json()["sponsored_seats_left"] == 1
+    first = signup_member(client, email="first@example.org")
+    st = first.get("/api/state").json()
+    assert st["user"]["sponsored"] and st["plan"]["id"] == "sponsored"
+    assert st["connections"]["ai"] and st["connections"]["ai_sponsored"] and not st["connections"]["ai_own_key"]
+    assert client.get("/api/setup").json()["sponsored_seats_left"] == 0
+    second = signup_member(client, email="second@example.org")
+    st2 = second.get("/api/state").json()
+    assert not st2["user"]["sponsored"] and st2["plan"]["id"] == "beta" and not st2["connections"]["ai"]
+    # The owner can sponsor and unsponsor.
+    me2 = second.get("/api/auth/me").json()
+    assert client.put(f"/api/admin/users/{me2['id']}", json={"sponsored": True}).json()["plan"] == "sponsored"
+    assert second.get("/api/state").json()["connections"]["ai"] is True
+    assert client.put(f"/api/admin/users/{me2['id']}", json={"sponsored": False}).json()["plan"] == "beta"
+    assert second.get("/api/state").json()["connections"]["ai"] is False
+    totals = client.get("/api/admin/overview").json()["totals"]
+    assert totals["sponsored"] == 1 and totals["sponsored_seats"] == 1
+    # Sponsored members are capped per month.
+    from career.db import Session, User, put
+    from datetime import datetime, timezone
+
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    with Session() as db:
+        user = db.query(User).filter_by(email="first@example.org").one()
+        for i in range(300):
+            put(db, "job", f"job:old{i}", {"title": f"J{i}", "description": "x", "status": "new", "match": {"score": 1}, "evaluated": f"{month}-01T00:00:00+00:00"}, user_id=user.id)
+    assert first.get("/api/state").json()["plan"]["evaluations_used"] == 300
+    from career.test_helpers import evaluation_budget_for
+    assert evaluation_budget_for(first) == 0
+
+
+def test_sponsoring_is_off_without_a_server_key(client, monkeypatch):
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    monkeypatch.setattr(settings, "sponsored_seats", 5)
+    assert client.get("/api/setup").json()["sponsored_seats_left"] == 0
+    member = signup_member(client)
+    assert member.get("/api/state").json()["user"]["sponsored"] is False
