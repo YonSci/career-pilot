@@ -8,6 +8,18 @@ It never submits anything, never contacts employers, and never invents facts abo
 
 Version 0.3 supports several people on one server: each account has a private workspace, brings its own OpenAI API key, connects its own mailbox for email alerts, and links its own Telegram chat. Sign-up is invitation-only during the beta; the first account created becomes the owner and gets the Cohort tab (invitations, plans, activation metrics). See `docs/DEPLOYMENT.md` for the Render deployment.
 
+## Screenshots
+
+| Landing page | Opportunities | Match explanation |
+| --- | --- | --- |
+| ![Landing page](docs/screenshots/01-landing-hero.png) | ![Opportunities tab](docs/screenshots/03-app-opportunities.png) | ![Job detail with relevance explanation](docs/screenshots/04-app-job-detail.png) |
+
+| Applications | My evidence | Job sources |
+| --- | --- | --- |
+| ![Applications tab](docs/screenshots/05-app-applications.png) | ![My evidence tab](docs/screenshots/06-app-evidence.png) | ![Job sources tab](docs/screenshots/07-app-sources.png) |
+
+More in [docs/screenshots](docs/screenshots/), including the full landing page and the phone layout. Captured from the live beta with a demo account.
+
 ## How it works
 
 1. **Evidence.** Upload your CV. Facts are extracted with exact source quotes. You verify each one. Only verified facts are used anywhere.
