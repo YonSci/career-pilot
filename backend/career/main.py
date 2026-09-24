@@ -68,7 +68,7 @@ async def lifespan(app):
         scheduler.shutdown()
 
 
-VERSION = "0.3.10"
+VERSION = "0.3.11"
 app = FastAPI(title=settings.app_name, version=VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,

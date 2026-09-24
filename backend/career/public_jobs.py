@@ -15,6 +15,7 @@ from .service import expired
 
 PRIVATE_SOURCES = ("Email alert", "Manual")
 FEATURED_SCORE = 75
+RELEVANT_SCORE = 60  # or a field keyword in the title: keeps generic postings off the public list
 STALE_DAYS = 21
 CLOSING_DAYS = 14
 _cache = {"at": 0.0, "value": None}
@@ -54,10 +55,13 @@ def compute(db):
         last_seen = _parse(job.get("last_seen")) or _parse(job.get("created"))
         if not last_seen or last_seen < stale:
             continue
+        score = (job.get("match") or {}).get("score") or 0
+        if not (job.get("screen") or {}).get("title_hits") and score < RELEVANT_SCORE:
+            continue
         posted = _parse(job.get("posted")) or _parse(job.get("created"))
         key = job["url"].lower().rstrip("/")
         entry = seen.setdefault(key, {"job": _public(job, posted), "posted": posted or last_seen, "interest": 0, "created": _parse(job.get("created")) or last_seen})
-        if ((job.get("match") or {}).get("score") or 0) >= FEATURED_SCORE:
+        if score >= FEATURED_SCORE:
             entry["interest"] += 1
         if posted and posted > entry["posted"]:
             entry["posted"] = posted

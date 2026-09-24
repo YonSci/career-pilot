@@ -12,7 +12,7 @@ from tests.test_workflow import JOB
 
 
 def seed(db, user_id, key, **over):
-    data = {**JOB, "status": "new", "match": None, "created": datetime.now(timezone.utc).isoformat(), "last_seen": datetime.now(timezone.utc).isoformat(), "source": "ReliefWeb", "posted": datetime.now(timezone.utc).isoformat(), **over}
+    data = {**JOB, "status": "new", "match": None, "created": datetime.now(timezone.utc).isoformat(), "last_seen": datetime.now(timezone.utc).isoformat(), "source": "ReliefWeb", "posted": datetime.now(timezone.utc).isoformat(), "screen": {"title_hits": ["data"]}, **over}
     return put(db, "job", "job:" + key, data, user_id=user_id)
 
 
@@ -31,15 +31,17 @@ def test_public_listings_show_public_facts_only(client):
         seed(db, owner, "e", url="https://example.org/jobs/e", title="Expired role", deadline="2020-01-01")
         seed(db, owner, "f", url="https://example.org/jobs/f", title="Stale role", last_seen=(datetime.now(timezone.utc) - timedelta(days=40)).isoformat())
         seed(db, owner, "g", url="https://example.org/jobs/g", title="Archived role", status="archived")
+        seed(db, owner, "h", url="https://example.org/jobs/h", title="Country Director", screen={"title_hits": []}, match={"score": 20})
+        seed(db, owner, "i", url="https://example.org/jobs/i", title="Evaluated but generic title", screen={"title_hits": []}, match={"score": 66})
     anon = TestClient(app)
     d = anon.get("/api/public/jobs").json()
     titles = [j["title"] for j in d["latest"]]
-    assert titles.count("Hydrologist") == 1 and "GIS Analyst" in titles
-    for hidden in ("From my inbox", "Pasted by hand", "Expired role", "Stale role", "Archived role"):
+    assert titles.count("Hydrologist") == 1 and "GIS Analyst" in titles and "Evaluated but generic title" in titles
+    for hidden in ("From my inbox", "Pasted by hand", "Expired role", "Stale role", "Archived role", "Country Director"):
         assert hidden not in titles
     assert [j["title"] for j in d["featured"]] == ["Hydrologist"]
     assert [j["title"] for j in d["closing_soon"]] == ["GIS Analyst"]
-    assert d["total"] == 2 and d["listed_last_7_days"] == 2
+    assert d["total"] == 3 and d["listed_last_7_days"] == 3
     body = anon.get("/api/public/jobs").text
     for private in ("score", "summary", "match", "user_id", "status", "private", "Example Applicant"):
         assert private not in body
