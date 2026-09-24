@@ -18,7 +18,7 @@ from fastapi import (
     BackgroundTasks,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response as RawResponse, JSONResponse
+from fastapi.responses import Response as RawResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
@@ -50,6 +50,7 @@ from .scheduler import scheduler
 from . import telegram
 from . import assistant
 from . import telemetry
+from . import public_jobs
 from .ai import server_key_usage
 
 
@@ -67,7 +68,7 @@ async def lifespan(app):
         scheduler.shutdown()
 
 
-VERSION = "0.3.9"
+VERSION = "0.3.10"
 app = FastAPI(title=settings.app_name, version=VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -269,6 +270,35 @@ def public_stats(db=Depends(db_session)):
     }
     _stats_cache.update(at=_time.time(), value=value)
     return value
+
+
+@app.get("/api/public/jobs")
+def public_job_listings(db=Depends(db_session)):
+    """Latest, featured and closing-soon postings from public boards for the landing page.
+    Public posting facts only; nothing about members. Cached 10 minutes."""
+    return public_jobs.listings(db)
+
+
+_landing_cache = {"at": 0.0, "html": None}
+
+
+@app.get("/", include_in_schema=False)
+def landing_page(db=Depends(db_session)):
+    """The landing page with the latest public postings rendered in (search engines
+    see them without JavaScript), plus JobPosting structured data."""
+    import time as _time
+
+    index = settings.landing_dir / "index.html"
+    if not index.is_file():
+        raise HTTPException(404, "Not found")
+    if _landing_cache["html"] and _time.time() - _landing_cache["at"] < 600:
+        return HTMLResponse(_landing_cache["html"])
+    data = public_jobs.listings(db)
+    page = index.read_text(encoding="utf-8")
+    page = page.replace("<!--JOBS-->", public_jobs.render_cards(data["latest"]), 1)
+    page = page.replace("<!--JOBS-JSONLD-->", public_jobs.json_ld(data["latest"], settings.public_url.rstrip("/") + "/#jobs"), 1)
+    _landing_cache.update(at=_time.time(), html=page)
+    return HTMLResponse(page)
 
 
 class WaitlistRequest(BaseModel):

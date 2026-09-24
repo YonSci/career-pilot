@@ -9,6 +9,7 @@
 <meta property="og:description" content="Continuous job discovery, requirement-by-requirement matching against your verified CV, alerts, and evidence-checked application drafts. Built for data, climate, geospatial, agriculture and development-sector careers." />
 <meta property="og:type" content="website" />
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<!--JOBS-JSONLD-->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -105,6 +106,25 @@
   .stat b { display: block; font-family: Fraunces, serif; font-size: 2rem; color: var(--green-2); line-height: 1; }
   .stat span { font-size: 0.82rem; color: var(--muted); }
   .stats-caption { text-align: center; font-size: 0.75rem; color: var(--muted); padding-bottom: 14px; }
+  /* Public job listings */
+  .jobs-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  .jobs-head .section-head { margin-bottom: 0; }
+  .jobs-tabs { display: inline-flex; gap: 6px; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 4px; }
+  .jobs-tabs button { border: none; background: transparent; padding: 8px 14px; border-radius: 999px; font: inherit; font-size: 0.86rem; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+  .jobs-tabs button[aria-selected="true"] { background: var(--green); color: #fff; }
+  .job-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 26px; }
+  .job-item { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 6px; min-height: 128px; }
+  .job-item .job-link { font-weight: 700; color: var(--ink); text-decoration: none; font-size: 0.98rem; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .job-item .job-link:hover { color: var(--green); }
+  .job-item .job-org { font-size: 0.86rem; color: var(--ink-2); }
+  .job-item .job-meta { font-size: 0.76rem; color: var(--muted); margin-top: auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .job-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--gold-soft); color: #7a5a14; font-weight: 600; font-size: 0.72rem; }
+  .job-badge.new { background: var(--green-soft, #e3efe8); color: var(--green); }
+  .job-badge.urgent { background: #fbe4e1; color: #a1362a; }
+  .jobs-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 22px; font-size: 0.86rem; color: var(--muted); }
+  .jobs-empty { color: var(--muted); font-size: 0.92rem; grid-column: 1 / -1; }
+  @media (max-width: 900px) { .job-list { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .job-list { grid-template-columns: 1fr; } .jobs-tabs { width: 100%; justify-content: space-between; } .jobs-tabs button { padding: 8px 10px; font-size: 0.8rem; } }
 
   .strip { padding: 18px 0; }
   .strip .wrap { display: flex; gap: 22px; flex-wrap: wrap; align-items: center; justify-content: center; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
@@ -223,6 +243,7 @@
       <span>Jobs Find AI<small>YOUR NEXT CHAPTER</small></span>
     </a>
     <div class="nav-links">
+      <a class="link" href="#jobs">Jobs</a>
       <a class="link" href="#features">Features</a>
       <a class="link" href="#how">How it works</a>
       <a class="link" href="#pricing">Pricing</a>
@@ -299,6 +320,26 @@
     <span>Reads from</span><span>ReliefWeb</span><span>LinkedIn alerts</span><span>Devex &amp; UNjobs alerts</span><span>Greenhouse</span><span>Lever</span><span>Workable</span><span>SmartRecruiters</span><span>Ashby</span><span>Remotive</span><span>Any RSS feed or careers page</span>
   </div>
 </div>
+
+<section id="jobs" class="wrap reveal">
+  <div class="jobs-head">
+    <div class="section-head">
+      <span class="eyebrow">Live from the boards</span>
+      <h2>Recently listed roles in your field.</h2>
+      <p class="lead">Fresh postings from ReliefWeb and the employer boards the beta follows. <span id="jobs-count"></span></p>
+    </div>
+    <div class="jobs-tabs" role="tablist" aria-label="Job listings">
+      <button role="tab" aria-selected="true" data-list="latest">Latest jobs</button>
+      <button role="tab" aria-selected="false" data-list="featured">Featured vacancies</button>
+      <button role="tab" aria-selected="false" data-list="closing_soon">Closing soon</button>
+    </div>
+  </div>
+  <div class="job-list" id="job-list"><!--JOBS--></div>
+  <div class="jobs-foot">
+    <span id="jobs-updated">Public postings only, refreshed every ten minutes. Sign in to see how each one matches your verified CV.</span>
+    <a class="btn btn-primary" href="#invite">Get matched to these roles</a>
+  </div>
+</section>
 
 <section id="sectors" class="wrap reveal">
   <div class="section-head">
@@ -505,6 +546,36 @@
     const cycle = () => setTimeout(() => erase(() => { i = (i + 1) % roles.length; type(roles[i], cycle); }), 2200);
     cycle();
   }
+
+  // Public job listings: the server renders the latest list; tabs load the rest.
+  (() => {
+    const list = document.getElementById("job-list");
+    const tabs = document.querySelectorAll(".jobs-tabs button");
+    const esc = (s) => String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const fmt = (d) => { const x = d ? new Date(d) : null; return x && !isNaN(x) ? x.toLocaleDateString(undefined, { day: "2-digit", month: "short" }) : ""; };
+    const card = (j) => {
+      const days = j.deadline ? Math.floor((new Date(j.deadline.slice(0, 10) + "T23:59:59Z") - Date.now()) / 86400000) : null;
+      const fresh = j.posted && (Date.now() - new Date(j.posted)) / 86400000 <= 3;
+      const badges = (fresh ? '<span class="job-badge new">New</span>' : "") + (days !== null ? `<span class="job-badge ${days <= 5 ? "urgent" : ""}">Closes ${days <= 0 ? "today" : "in " + days + " day" + (days === 1 ? "" : "s")}</span>` : "");
+      const meta = [esc(j.source), j.posted ? "Posted " + fmt(j.posted) : ""].filter(Boolean).join(" · ");
+      return `<article class="job-item"><a class="job-link" href="${esc(j.url)}" target="_blank" rel="noopener nofollow" data-title="${esc(j.title)}">${esc(j.title)}</a><p class="job-org">${esc(j.company)}${j.company && j.location ? " · " : ""}${esc(j.location)}</p><p class="job-meta">${meta}${badges}</p></article>`;
+    };
+    const empty = { latest: "Postings appear here as the beta collects them.", featured: "Featured vacancies are postings that matched members' verified CVs strongly. None yet this week.", closing_soon: "No listed postings close in the next two weeks." };
+    let data = null;
+    const show = (name) => {
+      tabs.forEach((t) => t.setAttribute("aria-selected", String(t.dataset.list === name)));
+      if (!data) return;
+      const jobs = data[name] || [];
+      list.innerHTML = jobs.length ? jobs.map(card).join("") : `<p class="jobs-empty">${empty[name]}</p>`;
+    };
+    fetch("/api/public/jobs").then((r) => r.json()).then((d) => {
+      data = d;
+      const n = d.listed_last_7_days || 0;
+      document.getElementById("jobs-count").textContent = n ? `${n} new in the last 7 days · ${d.total} open postings.` : d.total ? `${d.total} open postings.` : "";
+    }).catch(() => {});
+    tabs.forEach((t) => t.addEventListener("click", () => { show(t.dataset.list); track("public_jobs_tab_clicked", { list: t.dataset.list }); }));
+    list.addEventListener("click", (e) => { const a = e.target.closest("a.job-link"); if (a) track("public_job_clicked", { title: a.dataset.title, list: document.querySelector('.jobs-tabs [aria-selected="true"]').dataset.list }); });
+  })();
 
   // Live totals
   fetch("/api/public/stats").then((r) => r.json()).then((s) => {
