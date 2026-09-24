@@ -1,1 +1,1 @@
-"""Career Pilot: personal, evidence-grounded job applications."""
+"""Jobs Find AI: personal, evidence-grounded job applications."""

@@ -240,7 +240,7 @@ const emptyAccount: Account = { id: "", email: "", name: "", role: "member", pla
 const initial: State = {
   user: emptyAccount,
   plan: { id: "beta", label: "Beta", sources: 20, evaluations_per_run: 50, packages_per_month: 30, schedule: true, packages_used: 0 },
-  app_name: "Career Pilot",
+  app_name: "Jobs Find AI",
   profile: { name: "", headline: "", facts: [] },
   preferences: defaults,
   connections: {},
@@ -292,12 +292,12 @@ const sourceHelp: Record<string, { label: string; placeholder: string; help: str
   },
   imap: {
     label: "Label or folder (optional)",
-    placeholder: "CareerPilot",
+    placeholder: "JobsFindAI",
     help: "Reads job-alert emails (LinkedIn, Devex, UNjobs, Impactpool…) from a label in your own mailbox. Connect the mailbox under Account first. Needs your AI key.",
   },
   gmail: {
     label: "Gmail search (optional)",
-    placeholder: "label:CareerPilot newer_than:7d",
+    placeholder: "label:JobsFindAI newer_than:7d",
     help: "Owner account only: Gmail OAuth import configured on the server.",
   },
   rss: {
@@ -572,7 +572,7 @@ function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_
             <p>A personal job-search assistant. It collects postings from sources you choose, explains how each one matches the CV facts you verified, alerts you, and drafts applications only when you ask.</p>
             <p>{(setup as { sponsored_seats_left?: number }).sponsored_seats_left ? "Early members get AI usage included; later members bring their own OpenAI key." : "You bring your own OpenAI key."} Nothing is ever submitted to employers on your behalf.</p>
             <p className="field-help">
-              <a href="/">About Career Pilot</a> · <a href="/privacy.html" target="_blank" rel="noreferrer">Privacy</a> · <a href="/terms.html" target="_blank" rel="noreferrer">Terms</a>
+              <a href="/">About Jobs Find AI</a> · <a href="/privacy.html" target="_blank" rel="noreferrer">Privacy</a> · <a href="/terms.html" target="_blank" rel="noreferrer">Terms</a>
             </p>
           </section>
         </div>
@@ -681,7 +681,7 @@ export default function Home() {
     [draft, setDraft] = useState<Pack | null>(null),
     [linkCode, setLinkCode] = useState<null | { code: string; bot_username: string }>(null),
     [apiKey, setApiKey] = useState(""),
-    [imap, setImap] = useState({ host: "imap.gmail.com", port: 993, username: "", password: "", folder: "CareerPilot" }),
+    [imap, setImap] = useState({ host: "imap.gmail.com", port: 993, username: "", password: "", folder: "JobsFindAI" }),
     [pw, setPw] = useState({ current: "", new: "" }),
     [accountName, setAccountName] = useState(""),
     [overview, setOverview] = useState<Overview | null>(null),
@@ -941,7 +941,7 @@ export default function Home() {
     return (
       <>
         <Toaster richColors position="bottom-right" />
-        <AuthScreen setup={setup ?? { app_name: "Career Pilot", needs_first_account: false, invite_only: true }} onDone={boot} />
+        <AuthScreen setup={setup ?? { app_name: "Jobs Find AI", needs_first_account: false, invite_only: true }} onDone={boot} />
       </>
     );
   }
@@ -1519,7 +1519,7 @@ export default function Home() {
                   );
                 })}
                 <p className="field-help">
-                  LinkedIn: create saved searches with email alerts, label those emails <strong>CareerPilot</strong> in your mailbox, connect the mailbox under Account, then add the mailbox source. Incomplete email excerpts stay excerpts; paste the full posting before preparing a detailed application.
+                  LinkedIn: create saved searches with email alerts, label those emails <strong>JobsFindAI</strong> in your mailbox, connect the mailbox under Account, then add the mailbox source. Incomplete email excerpts stay excerpts; paste the full posting before preparing a detailed application.
                 </p>
               </section>
             </div>
@@ -1531,7 +1531,7 @@ export default function Home() {
                     <Radio size={19} />
                     <div>
                       <strong>{s.source_kinds[src.kind] ?? src.kind}</strong>
-                      <p>{src.value || (src.kind === "imap" || src.kind === "gmail" ? "CareerPilot label" : "default query")}</p>
+                      <p>{src.value || (src.kind === "imap" || src.kind === "gmail" ? "JobsFindAI label" : "default query")}</p>
                     </div>
                     <Switch aria-label="Enable source" checked={src.enabled} onCheckedChange={(v) => act("toggle-source", () => call("/sources/" + src.id, "PUT", { enabled: v }), v ? "Source enabled" : "Source paused")} />
                     <button className="icon-button" aria-label="Remove source" onClick={() => act("remove", () => call("/sources/" + src.id, "DELETE"), "Source removed")}>
@@ -1797,7 +1797,7 @@ export default function Home() {
                   </h2>
                   <span className={"tag " + (s.user.has_imap ? "tag-green" : "")}>{s.user.has_imap ? "Connected" : "Not connected"}</span>
                   <p className="field-help">
-                    Forward or filter LinkedIn, Devex, UNjobs or ReliefWeb alerts into a <strong>CareerPilot</strong> label, then connect the mailbox here with an app password (Gmail: Google Account → Security → 2-Step Verification → App passwords). Only that label is read.
+                    Forward or filter LinkedIn, Devex, UNjobs or ReliefWeb alerts into a <strong>JobsFindAI</strong> label, then connect the mailbox here with an app password (Gmail: Google Account → Security → 2-Step Verification → App passwords). Only that label is read.
                   </p>
                   <div className="two-fields">
                     <label className="field">

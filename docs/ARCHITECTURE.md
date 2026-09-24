@@ -1,4 +1,4 @@
-# Career Pilot architecture
+# Jobs Find AI architecture
 
 This is a personal-use application. The Python API owns all private data. A bearer access token protects every data endpoint. The hosted dashboard is owner-private and can proxy to a separately hosted Python API using an explicit owner email allowlist. The portable dashboard uses the same React component and can be served by FastAPI.
 

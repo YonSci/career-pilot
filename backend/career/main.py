@@ -67,7 +67,7 @@ async def lifespan(app):
         scheduler.shutdown()
 
 
-VERSION = "0.3.8"
+VERSION = "0.3.9"
 app = FastAPI(title=settings.app_name, version=VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -393,7 +393,7 @@ class ImapInput(BaseModel):
     port: int = Field(default=993, ge=1, le=65535)
     username: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=1, max_length=200)
-    folder: str = Field(default="CareerPilot", max_length=100)
+    folder: str = Field(default="JobsFindAI", max_length=100)
 
 
 @app.put("/api/account/imap")
@@ -401,7 +401,7 @@ async def set_imap(body: ImapInput, user: User = Depends(auth), db=Depends(db_se
     creds = body.model_dump()
     creds["host"] = creds["host"].strip().lower()
     creds["username"] = creds["username"].strip()
-    creds["folder"] = creds["folder"].strip() or "CareerPilot"
+    creds["folder"] = creds["folder"].strip() or "JobsFindAI"
     try:
         count = await run_in_threadpool(imap_check, creds)
     except ValueError as e:
@@ -553,7 +553,7 @@ async def admin_restore(request: Request, file: UploadFile = File(...), db=Depen
         try:
             tables = {r[0] for r in source.execute("select name from sqlite_master where type='table'")}
             if not {"records", "users"} <= tables:
-                raise HTTPException(422, "The backup does not contain Career Pilot tables.")
+                raise HTTPException(422, "The backup does not contain Jobs Find AI tables.")
             db.close()
             engine.dispose()
             raw = engine.raw_connection()

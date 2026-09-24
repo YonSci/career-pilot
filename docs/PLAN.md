@@ -1,4 +1,4 @@
-# Career Pilot: review and plan to make it fully functional
+# Jobs Find AI: review and plan to make it fully functional
 
 Reviewed 2026-09-19 against the code, the test suite, the live SQLite database and live probes of the external APIs.
 

@@ -32,7 +32,7 @@ from .db import current_user
 from .ai import structured, ai_available
 
 log = logging.getLogger(__name__)
-USER_AGENT = "CareerPilot/0.3 personal-job-assistant"
+USER_AGENT = "JobsFindAI/0.3 personal-job-assistant"
 UNAVAILABLE = "Description unavailable. Review the employer posting."
 MAX_PAGE_BYTES = 3_000_000
 MAX_REDIRECTS = 5
@@ -830,6 +830,17 @@ def _imap_quote(folder):
     return '"' + folder.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+
+LEGACY_FOLDER = "CareerPilot"  # label name from before the rename; still honoured
+
+
+def _select_folder(box, folder):
+    """Select a mailbox folder read-only; a missing default folder falls back to the legacy label."""
+    status, data = box.select(_imap_quote(folder), readonly=True)
+    if status != "OK" and folder == "JobsFindAI":
+        status, data = box.select(_imap_quote(LEGACY_FOLDER), readonly=True)
+    return status, data
+
 def imap_mailbox(client, value, ctx):
     """Job-alert emails read from the user's own mailbox with an app password
     (Gmail, Outlook, Yahoo, Fastmail…). Reads one label/folder, newest first."""
@@ -838,7 +849,7 @@ def imap_mailbox(client, value, ctx):
         raise ValueError("Add your mailbox (IMAP) details under Account first.")
     if not ai_available():
         raise ValueError("Add your OpenAI API key before importing job-alert emails.")
-    folder = (value or creds.get("folder") or "CareerPilot").strip()
+    folder = (value or creds.get("folder") or "JobsFindAI").strip()
     since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%d-%b-%Y")
     jobs, pending = [], []
     with imap_connect(creds["host"], creds.get("port")) as box:
@@ -846,7 +857,7 @@ def imap_mailbox(client, value, ctx):
             box.login(creds["username"], creds["password"])
         except imaplib.IMAP4.error:
             raise ValueError("The mailbox refused the login. For Gmail use an app password, not your normal password.")
-        status, _ = box.select(_imap_quote(folder), readonly=True)
+        status, _ = _select_folder(box, folder)
         if status != "OK":
             raise ValueError(f"The folder or label '{folder}' was not found in the mailbox.")
         status, data = box.uid("search", None, f"(SINCE {since})")
@@ -890,7 +901,7 @@ def imap_check(creds):
             box.login(creds["username"], creds["password"])
         except imaplib.IMAP4.error:
             raise ValueError("The mailbox refused the login. For Gmail use an app password, not your normal password.")
-        status, data = box.select(_imap_quote(creds.get("folder") or "CareerPilot"), readonly=True)
+        status, data = _select_folder(box, creds.get("folder") or "JobsFindAI")
         if status != "OK":
             raise ValueError("Logged in, but the folder or label was not found. Create it in your mailbox first.")
         return int(data[0] or 0)
@@ -952,8 +963,8 @@ SUGGESTED_SOURCES = [
     {
         "kind": "imap",
         "value": "",
-        "label": "Your mailbox: label CareerPilot",
-        "note": "Route LinkedIn, Devex, UNjobs, Impactpool or ReliefWeb email alerts to a CareerPilot label, then connect the mailbox under Account.",
+        "label": "Your mailbox: label JobsFindAI",
+        "note": "Route LinkedIn, Devex, UNjobs, Impactpool or ReliefWeb email alerts to a JobsFindAI label, then connect the mailbox under Account.",
     },
 ]
 

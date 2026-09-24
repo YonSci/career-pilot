@@ -1,4 +1,4 @@
-"""Platform assistant: answers questions about how Career Pilot works, grounded
+"""Platform assistant: answers questions about how Jobs Find AI works, grounded
 in the knowledge below. It runs on the server's key with the small model, is
 rate-limited per address, and never has access to anyone's workspace data
 beyond the short, non-sensitive status summary passed for signed-in users."""
@@ -11,8 +11,8 @@ MAX_CHARS = 600
 MAX_OUTPUT_TOKENS = 450
 
 KNOWLEDGE = """
-# Career Pilot: what it is
-Career Pilot is a personal job-search assistant for careers in data science, AI, climate, geospatial and remote sensing, hydrology, agriculture and international development. It continuously collects job postings from sources the user chooses, screens them against the user's keywords, asks an AI to explain requirement by requirement how each posting matches the user's VERIFIED CV facts, alerts the user (in-app inbox, Telegram, email), and drafts application documents only when the user clicks "Prepare application". It never submits applications, never contacts employers, and drafts only claims supported by verified evidence, checked by an independent review.
+# Jobs Find AI: what it is
+Jobs Find AI is a personal job-search assistant for careers in data science, AI, climate, geospatial and remote sensing, hydrology, agriculture and international development. It continuously collects job postings from sources the user chooses, screens them against the user's keywords, asks an AI to explain requirement by requirement how each posting matches the user's VERIFIED CV facts, alerts the user (in-app inbox, Telegram, email), and drafts application documents only when the user clicks "Prepare application". It never submits applications, never contacts employers, and drafts only claims supported by verified evidence, checked by an independent review.
 
 # Getting started (first hour)
 1. Create an account with an invitation code (the beta is invitation-only). Request one on the landing page; the owner sends invitation links.
@@ -24,7 +24,7 @@ Career Pilot is a personal job-search assistant for careers in data science, AI,
 
 # Job sources
 - ReliefWeb (development-sector jobs), with a search query such as: climate OR GIS OR "data science".
-- Mailbox alerts via IMAP: route LinkedIn, Devex, UNjobs, Impactpool, ReliefWeb or Indeed alert emails into a mailbox label named CareerPilot, then connect the mailbox under Account with an app password (Gmail: Google Account → Security → 2-Step Verification → App passwords). Only that label is read. LinkedIn itself is never scraped.
+- Mailbox alerts via IMAP: route LinkedIn, Devex, UNjobs, Impactpool, ReliefWeb or Indeed alert emails into a mailbox label named JobsFindAI, then connect the mailbox under Account with an app password (Gmail: Google Account → Security → 2-Step Verification → App passwords). Only that label is read. LinkedIn itself is never scraped.
 - Any RSS or Atom feed URL; a public careers page URL (AI identifies the postings on it); employer boards on Greenhouse, Lever, Workable, SmartRecruiters and Ashby (use the board identifier from the board's URL, for example "cgiar" in apply.workable.com/cgiar); Remotive categories such as data,artificial-intelligence,research.
 - Manual jobs: "Add a job" with the full posting text.
 - Sources must be public websites; private or local network addresses are rejected. Page-reading sources fetch at most 60 pages per search with a delay.
@@ -62,7 +62,7 @@ Career Pilot is a personal job-search assistant for careers in data science, AI,
 # Troubleshooting
 - "Add your AI key": the account has no OpenAI key; add it under Account.
 - A source shows "failed" in Job sources → Search activity: check the identifier or URL, use Test source; ReliefWeb occasionally drops connections and is retried automatically.
-- Mailbox refused login: use an app password, not the normal password, and make sure the CareerPilot label exists.
+- Mailbox refused login: use an app password, not the normal password, and make sure the JobsFindAI label exists.
 - Telegram code expired: generate a new code under Account.
 - A search shows "interrupted": the server restarted during it; run the search again.
 - Unranked postings: they wait for the next search (50 per search limit) or the account has no AI key (keyword ranking only).
@@ -70,10 +70,10 @@ Career Pilot is a personal job-search assistant for careers in data science, AI,
 """
 
 INSTRUCTIONS = (
-    "You are the Career Pilot assistant. Answer questions about how to use Career Pilot, its features, pricing, privacy and troubleshooting, "
+    "You are the Jobs Find AI assistant. Answer questions about how to use Jobs Find AI, its features, pricing, privacy and troubleshooting, "
     "using ONLY the knowledge provided. Be concise and concrete: short paragraphs or numbered steps, name the tab and button to click. "
     "If the answer is not in the knowledge, say you do not know and suggest contacting the owner through the invitation email or the landing page form. "
-    "Only answer questions about Career Pilot and job searching with it; for anything unrelated (general knowledge, other products, coding, homework), reply in one sentence that you can only help with Career Pilot. "
+    "Only answer questions about Jobs Find AI and job searching with it; for anything unrelated (general knowledge, other products, coding, homework), reply in one sentence that you can only help with Jobs Find AI. "
     "Write plain text: no markdown symbols such as asterisks or pound signs; use numbered steps and short lines instead. "
     "Never invent features, prices or promises. Never ask for passwords, API keys or personal data. Do not give career or job-search advice beyond how the product works. "
     "If a workspace status is provided, tailor the next step to it (for example, if no OpenAI key is set, say so). Reply in the language of the question when it is not English."

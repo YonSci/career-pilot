@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-    app_name: str = "Career Pilot"
+    app_name: str = "Jobs Find AI"
     database_url: str = "sqlite:///./data/career.db"
     data_dir: Path = Path("data")
     app_token: str = ""
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     gmail_client_id: str = ""
     gmail_client_secret: str = ""
     gmail_refresh_token: str = ""
-    gmail_query: str = "label:CareerPilot newer_than:7d"
+    gmail_query: str = "{label:JobsFindAI label:JobsFindAI} newer_than:7d"
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     whatsapp_from: str = ""

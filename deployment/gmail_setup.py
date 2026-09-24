@@ -84,7 +84,7 @@ def main():
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(
-                b"<h2>Career Pilot: Gmail authorized.</h2><p>You can close this tab and return to the terminal.</p>"
+                b"<h2>Jobs Find AI: Gmail authorized.</h2><p>You can close this tab and return to the terminal.</p>"
                 if result["code"]
                 else b"<h2>Authorization was declined.</h2>"
             )
@@ -142,8 +142,8 @@ def main():
     )
     who = check.json().get("emailAddress", "your account") if check.status_code == 200 else "your account"
     print(f"Gmail authorized for {who}. GMAIL_REFRESH_TOKEN saved to .env.")
-    print("Create a Gmail label named CareerPilot and a filter that applies it to job-alert emails.")
-    print("Restart the Career Pilot server, then add the Gmail source in Job sources.")
+    print("Create a Gmail label named JobsFindAI and a filter that applies it to job-alert emails.")
+    print("Restart the Jobs Find AI server, then add the Gmail source in Job sources.")
 
 
 if __name__ == "__main__":

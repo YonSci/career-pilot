@@ -32,7 +32,7 @@ services:
       - key: AI_ACTIONS_PER_HOUR
         value: "40"          # per-account limit on manual AI actions
       - key: APP_NAME
-        value: Career Pilot
+        value: Jobs Find AI
       - key: PUBLIC_URL
         sync: false          # https://<service>.onrender.com or your custom domain
       - key: CORS_ORIGINS

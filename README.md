@@ -1,4 +1,4 @@
-# Career Pilot
+# Jobs Find AI
 
 A personal job discovery and application assistant for data science, AI, geospatial, climate, hydrology, agriculture and development-sector roles.
 
@@ -65,7 +65,7 @@ Add sources under **Job sources**. Use **Test source** before saving to see what
 | Kind | Value | Notes |
 |---|---|---|
 | ReliefWeb | search query, e.g. `climate OR GIS OR "data science"` | Uses API v2 when `RELIEFWEB_APPNAME` is set (request one at https://apidoc.reliefweb.int/parameters#appname). Without it, falls back to the public RSS feed and reads each new job page. |
-| Mailbox alerts (IMAP) | optional label/folder (default `CareerPilot`) | Any account. Route LinkedIn, Devex, UNjobs, Impactpool, ReliefWeb or Indeed alert emails to a `CareerPilot` label, then connect the mailbox under **Account** with an app password. Needs your AI key. |
+| Mailbox alerts (IMAP) | optional label/folder (default `JobsFindAI`) | Any account. Route LinkedIn, Devex, UNjobs, Impactpool, ReliefWeb or Indeed alert emails to a `JobsFindAI` label, then connect the mailbox under **Account** with an app password. Needs your AI key. |
 | Gmail OAuth alerts | optional Gmail query | Owner account only; needs the Gmail authorization below. |
 | RSS / Atom feed | feed URL | Any board that publishes a feed. Short entries are completed from the linked page. |
 | Careers page | page URL | A public vacancies page. AI identifies the postings on it; each new posting page is read once. Needs AI. |
@@ -82,7 +82,7 @@ Once, in Google Cloud console: create a project, enable the **Gmail API**, confi
 .venv\Scripts\python deployment\gmail_setup.py path\to\client_secret_xxx.json
 ```
 
-The browser opens, you approve read-only access, and `GMAIL_REFRESH_TOKEN` is written to `.env`. Restart the server, create the `CareerPilot` label and a Gmail filter that applies it to alert emails, then add the Gmail source. Test-mode refresh tokens expire after 7 days unless the consent screen is published; rerun the script if imports start failing.
+The browser opens, you approve read-only access, and `GMAIL_REFRESH_TOKEN` is written to `.env`. Restart the server, create the `JobsFindAI` label and a Gmail filter that applies it to alert emails, then add the Gmail source. Test-mode refresh tokens expire after 7 days unless the consent screen is published; rerun the script if imports start failing.
 
 ## Alerts
 

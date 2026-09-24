@@ -17,7 +17,7 @@ def main():
         raise SystemExit("This repair is for the local SQLite setup only.")
     database = engine.url.database
     if not database or database == ":memory:" or not Path(database).is_file():
-        raise SystemExit("No existing SQLite database found. Run from your Career Pilot project folder.")
+        raise SystemExit("No existing SQLite database found. Run from your Jobs Find AI project folder.")
 
     with Session() as db:
         runs = [r for r in db.query(Record).filter_by(kind="run").all()

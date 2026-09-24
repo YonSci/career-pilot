@@ -1,4 +1,4 @@
-# Start Career Pilot locally on Windows (API + dashboard + in-process scheduler).
+# Start Jobs Find AI locally on Windows (API + dashboard + in-process scheduler).
 # Usage:  .\run.ps1            (foreground, Ctrl+C to stop)
 #         .\run.ps1 -Port 8010 (different port; update PUBLIC_URL/CORS_ORIGINS in .env to match)
 # Output goes to data\logs\server.log (follow it with: Get-Content data\logs\server.log -Wait).
@@ -22,6 +22,6 @@ if (-not (Test-Path "dashboard\index.html")) {
 }
 New-Item -ItemType Directory -Force -Path "data\logs" | Out-Null
 $env:PYTHONUNBUFFERED = "1"
-Write-Host "Career Pilot starting on http://$BindHost`:$Port  (log: data\logs\server.log)"
+Write-Host "Jobs Find AI starting on http://$BindHost`:$Port  (log: data\logs\server.log)"
 # cmd owns the redirection: PowerShell 5.1 would otherwise turn uvicorn's stderr logging into errors.
 & cmd.exe /c "`"$python`" -m uvicorn career.main:app --app-dir backend --host $BindHost --port $Port --log-level info >> data\logs\server.log 2>&1"

@@ -23,7 +23,7 @@ Cohort tab → Invitations → Generate codes. Each code is a link like `https:/
 
 Onboarding note to send:
 
-> 1. Open the link, create your account. 2. Account → paste an OpenAI API key (platform.openai.com → API keys; you pay only for your own usage, typically 1 to 3 dollars per search of 50 postings). 3. My evidence → upload your CV, verify the facts. 4. Job sources → add the suggested sources, or your mailbox with a CareerPilot label for LinkedIn alerts. 5. Account → Link Telegram for alerts. 6. Preferences → enable scheduled searches.
+> 1. Open the link, create your account. 2. Account → paste an OpenAI API key (platform.openai.com → API keys; you pay only for your own usage, typically 1 to 3 dollars per search of 50 postings). 3. My evidence → upload your CV, verify the facts. 4. Job sources → add the suggested sources, or your mailbox with a JobsFindAI label for LinkedIn alerts. 5. Account → Link Telegram for alerts. 6. Preferences → enable scheduled searches.
 
 ## Migrating your personal data (optional)
 
