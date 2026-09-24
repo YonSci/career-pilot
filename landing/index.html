@@ -124,12 +124,13 @@
   .jobs-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 22px; font-size: 0.86rem; color: var(--muted); }
   .jobs-empty { color: var(--muted); font-size: 0.92rem; grid-column: 1 / -1; }
   @media (max-width: 900px) { .job-list { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 560px) { .job-list { grid-template-columns: 1fr; } .jobs-tabs { width: 100%; justify-content: space-between; } .jobs-tabs button { padding: 8px 10px; font-size: 0.8rem; } }
+  .jobs-tabs .short { display: none; }
+  @media (max-width: 560px) { .job-list { grid-template-columns: 1fr; } .jobs-tabs { width: 100%; justify-content: space-between; } .jobs-tabs button { padding: 8px 10px; font-size: 0.82rem; white-space: nowrap; flex: 1; } .jobs-tabs .full { display: none; } .jobs-tabs .short { display: inline; } }
 
   .strip { padding: 18px 0; }
   .strip .wrap { display: flex; gap: 22px; flex-wrap: wrap; align-items: center; justify-content: center; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
 
-  section { padding: 78px 0; }
+  section { padding: 78px 0; scroll-margin-top: 72px; }
   .section-head { max-width: 62ch; margin-bottom: 38px; }
   .section-head h2 { margin: 10px 0 14px; }
   .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
@@ -329,8 +330,8 @@
       <p class="lead">Fresh postings from ReliefWeb and the employer boards the beta follows. <span id="jobs-count"></span></p>
     </div>
     <div class="jobs-tabs" role="tablist" aria-label="Job listings">
-      <button role="tab" aria-selected="true" data-list="latest">Latest jobs</button>
-      <button role="tab" aria-selected="false" data-list="featured">Featured vacancies</button>
+      <button role="tab" aria-selected="true" data-list="latest"><span class="full">Latest jobs</span><span class="short">Latest</span></button>
+      <button role="tab" aria-selected="false" data-list="featured"><span class="full">Featured vacancies</span><span class="short">Featured</span></button>
       <button role="tab" aria-selected="false" data-list="closing_soon">Closing soon</button>
     </div>
   </div>
