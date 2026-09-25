@@ -79,6 +79,32 @@ class Settings(BaseSettings):
     server_key_monthly_calls: int = 4000
     # Per-account limits on manual AI actions per hour (evaluate, extract, test page sources, prepare).
     ai_actions_per_hour: int = 40
+    # --- Billing. Prices in whole units; ETB for Ethiopia, USD for cards worldwide.
+    price_pro_etb: int = 350
+    price_pro_plus_etb: int = 800
+    price_package_etb: int = 100
+    price_pro_usd: int = 9
+    price_pro_plus_usd: int = 19
+    price_package_usd: int = 2
+    featured_listing_etb: int = 2500
+    featured_listing_usd: int = 25
+    institution_seat_etb: int = 200
+    institution_seat_usd: int = 3
+    # Chapa (Ethiopia): secret key from the dashboard; webhook secret hash set in Chapa's webhook settings.
+    chapa_secret_key: str = ""
+    chapa_webhook_secret: str = ""
+    # Lemon Squeezy (cards worldwide): hosted checkout links per product and the webhook signing secret.
+    lemon_checkout_pro: str = ""
+    lemon_checkout_pro_plus: str = ""
+    lemon_checkout_package: str = ""
+    lemon_webhook_secret: str = ""
+    # Shown to members paying by hand when no gateway is configured (Telebirr number, bank details).
+    billing_contact: str = ""
+    # --- Growth. Public Telegram channel the bot posts to (@name or numeric id; bot must be admin).
+    telegram_channel_id: str = ""
+    telegram_channel_daily_hour: int = 7
+    # Personal invitation links each member can share.
+    referral_invites: int = 3
 
     @property
     def public_https(self) -> bool:

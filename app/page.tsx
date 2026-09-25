@@ -27,6 +27,9 @@ import {
   KeyRound,
   Mail,
   MessageCircleQuestion,
+  CreditCard,
+  Gift,
+  Megaphone,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -174,7 +177,24 @@ type Plan = {
   schedule: boolean;
   packages_used: number;
   evaluations_used?: number;
+  plan_until?: string | null;
+  credits?: number;
 };
+type Pricing = {
+  plans: Record<string, { etb: number; usd: number }>;
+  package: { etb: number; usd: number };
+  package_5: { etb: number; usd: number };
+  featured_listing: { etb: number; usd: number; days: number };
+  institution_seat: { etb: number; usd: number; minimum_seats: number };
+  gateways: { chapa: boolean; lemon: boolean; manual: boolean };
+  billing_contact: string;
+};
+type BillingInfo = Pricing & { plan_until?: string | null; credits: number; payments: { ref: string; product: string; amount: number; currency: string; provider: string; status: string; created: string; paid_at?: string }[] };
+type Referrals = { invites: { code: string; link: string; used: boolean; joined_name?: string | null; joined_at?: string | null }[]; referred: number };
+type EmployerPostRow = { id: string; title: string; company: string; location: string; url: string; deadline?: string | null; contact_name: string; contact_email: string; note: string; status: string; created: string; featured_until?: string };
+type Testimonial = { id: string; name: string; role: string; organisation: string; quote: string };
+type EnquiryRow = { id: string; organisation: string; contact_name: string; contact_email: string; seats: number; note: string; status: string; created: string };
+type PaymentRow = { ref: string; email: string; product: string; amount: number; currency: string; provider: string; status: string; created: string; paid_at?: string };
 type State = {
   user: Account;
   plan: Plan;
@@ -213,6 +233,12 @@ type Overview = {
   waitlist: { email: string; name: string; note: string; created: string; invited?: string | null; code?: string }[];
   totals: { users: number; activated: number; drafted: number; with_key: number; telegram: number; sponsored?: number; sponsored_seats?: number; sponsored_evaluations_this_month?: number; server_key_calls_this_month?: number; server_key_monthly_cap?: number };
   plans: Record<string, { label: string }>;
+  employer_posts?: EmployerPostRow[];
+  testimonials?: Testimonial[];
+  enquiries?: EnquiryRow[];
+  payments?: PaymentRow[];
+  pricing?: Pricing;
+  channel?: { enabled: boolean; last_daily?: string | null; last_weekly?: string | null; posts?: number };
 };
 const defaults: Prefs = {
   keywords: [
@@ -736,6 +762,42 @@ export default function Home() {
     if (signedIn) track("$pageview", { $current_url: window.location.origin + "/app/" + tab, tab });
   }, [tab, signedIn]);
   const flag = useFlags();
+  // Billing and referrals, loaded when the Account tab opens.
+  const [billingInfo, setBillingInfo] = useState<BillingInfo | null>(null);
+  const [referrals, setReferrals] = useState<Referrals | null>(null);
+  const [currency, setCurrency] = useState<"ETB" | "USD">("ETB");
+  const [manualPay, setManualPay] = useState("");
+  const [tForm, setTForm] = useState({ name: "", role: "", organisation: "", quote: "" });
+  useEffect(() => {
+    if (!signedIn || tab !== "account") return;
+    call<BillingInfo>("/billing").then(setBillingInfo).catch(() => {});
+    call<Referrals>("/account/referrals").then(setReferrals).catch(() => {});
+  }, [tab, signedIn]);
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("payment");
+    if (!p) return;
+    if (p === "paid") toast.success("Payment received. Your purchase is active.");
+    else toast.error("The payment was not confirmed yet. If you paid, it is activated as soon as the provider confirms.");
+    track("checkout_returned", { status: p });
+    setTab("account");
+    window.history.replaceState({}, "", "/app/");
+  }, []);
+  const priceOf = (product: "pro" | "pro_plus" | "package" | "package_5") => {
+    if (!billingInfo) return "";
+    const p = product === "pro" || product === "pro_plus" ? billingInfo.plans[product] : billingInfo[product];
+    return currency === "ETB" ? `${p.etb.toLocaleString()} ETB` : `$${p.usd}`;
+  };
+  const buy = (product: "pro" | "pro_plus" | "package" | "package_5") =>
+    act("buy-" + product, async () => {
+      const r = await call<{ mode: string; url?: string; instructions?: string }>("/billing/checkout", "POST", { product, currency });
+      track("checkout_started", { product, currency, mode: r.mode });
+      if (r.mode === "redirect" && r.url) {
+        window.location.href = r.url;
+        return;
+      }
+      setManualPay(r.instructions || "");
+      setBillingInfo(await call<BillingInfo>("/billing"));
+    });
   const [seenRun, setSeenRun] = useState<{ id: string; status: string } | null>(null);
   useEffect(() => {
     const r = s.runs[0];
@@ -1884,6 +1946,99 @@ export default function Home() {
                   )}
                 </section>
                 <section className="panel">
+                  <h2>
+                    <CreditCard size={18} /> Plan and billing
+                  </h2>
+                  <p className="field-help">
+                    You are on the <strong>{s.plan.label}</strong> plan
+                    {s.plan.plan_until ? `, active until ${new Date(s.plan.plan_until).toLocaleDateString()}` : ""}.{" "}
+                    {s.plan.packages_used} of {s.plan.packages_per_month} packages used this month
+                    {(s.plan.credits ?? 0) > 0 ? ` · ${s.plan.credits} extra package credit${s.plan.credits === 1 ? "" : "s"}` : ""}.
+                  </p>
+                  {billingInfo && !isAdmin && (
+                    <>
+                      <div className="currency-toggle" role="radiogroup" aria-label="Currency">
+                        {(["ETB", "USD"] as const).map((c) => (
+                          <button key={c} role="radio" aria-checked={currency === c} className={"chip " + (currency === c ? "chip-on" : "")} onClick={() => setCurrency(c)}>
+                            {c === "ETB" ? "Pay in birr" : "Pay by card (USD)"}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="plan-grid">
+                        {[
+                          ["pro", "Pro", "50 sources, scheduled searches, alerts, 10 packages a month, AI included"],
+                          ["pro_plus", "Pro Plus", "Everything in Pro, 30 packages a month, priority evaluation"],
+                        ].map(([id, label, blurb]) => (
+                          <div className={"plan-card " + (s.plan.id === id ? "plan-current" : "")} key={id}>
+                            <b>{label}</b>
+                            <span className="plan-price">{priceOf(id as "pro" | "pro_plus")} / month</span>
+                            <small>{blurb}</small>
+                            <button className="button primary" disabled={!!busy} onClick={() => buy(id as "pro" | "pro_plus")}>
+                              {s.plan.id === id ? "Extend a month" : "Choose " + label}
+                            </button>
+                          </div>
+                        ))}
+                        <div className="plan-card">
+                          <b>Application packages</b>
+                          <span className="plan-price">{priceOf("package")} each · 5 for {priceOf("package_5")}</span>
+                          <small>Credits never expire and work on any plan, including Free.</small>
+                          <div className="button-row">
+                            <button className="button secondary" disabled={!!busy} onClick={() => buy("package")}>
+                              Buy 1
+                            </button>
+                            <button className="button secondary" disabled={!!busy} onClick={() => buy("package_5")}>
+                              Buy 5
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      {manualPay && <p className="notice">{manualPay}</p>}
+                      {!billingInfo.gateways.chapa && currency === "ETB" && !manualPay && (
+                        <p className="field-help">Birr payments are confirmed by hand: you receive the payment details after choosing a plan, and the plan is activated the same day.</p>
+                      )}
+                      {billingInfo.payments.length > 0 && (
+                        <ul className="payment-list">
+                          {billingInfo.payments.slice(0, 5).map((p) => (
+                            <li key={p.ref}>
+                              <span>
+                                {p.product.replace("_", " ")} · {p.amount} {p.currency}
+                              </span>
+                              <span className={"tag " + (p.status === "paid" ? "tag-green" : "")}>{p.status === "paid" ? "paid" : p.status === "requested" ? "awaiting confirmation" : p.status}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  )}
+                  {isAdmin && <p className="field-help">The owner account has every entitlement. Members see plan choices and prices here.</p>}
+                </section>
+                <section className="panel">
+                  <h2>
+                    <Gift size={18} /> Invite colleagues
+                  </h2>
+                  <p className="field-help">
+                    Each of these links creates one account. {referrals?.referred ? `${referrals.referred} colleague${referrals.referred === 1 ? " has" : "s have"} joined through yours.` : "Share them with people in your field."}
+                  </p>
+                  {referrals?.invites.map((i) => (
+                    <div className="referral-row" key={i.code}>
+                      <code data-ph-mask>{i.link}</code>
+                      {i.used ? (
+                        <span className="tag tag-green">joined{i.joined_name ? ": " + i.joined_name : ""}</span>
+                      ) : (
+                        <button
+                          className="text-button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(i.link).then(() => toast.success("Link copied"), () => toast.error("Copy failed"));
+                            track("referral_link_copied");
+                          }}
+                        >
+                          Copy
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </section>
+                <section className="panel">
                   <h2>Profile and password</h2>
                   <p className="field-help">
                     Signed in as <strong data-ph-mask>{s.user.email}</strong> · {s.plan.label} plan{isAdmin ? " · owner" : ""}
@@ -2044,6 +2199,174 @@ export default function Home() {
                       ))}
                     </section>
                   )}
+                  {(overview.payments ?? []).some((p) => p.status !== "paid") && (
+                    <section className="panel">
+                      <h2>Payments awaiting confirmation</h2>
+                      <p className="field-help">Manual payments (Telebirr, bank transfer). Mark one as paid once the money has arrived; the purchase activates immediately.</p>
+                      {(overview.payments ?? [])
+                        .filter((p) => p.status !== "paid")
+                        .map((p) => (
+                          <div className="source-row" key={p.ref}>
+                            <CreditCard size={18} />
+                            <div>
+                              <strong>
+                                {p.email} · {p.product.replace("_", " ")} · {p.amount} {p.currency}
+                              </strong>
+                              <p>
+                                {p.provider} · reference {p.ref} · {new Date(p.created).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <button
+                              className="text-button"
+                              disabled={busy === "paid-" + p.ref}
+                              onClick={() =>
+                                act("paid-" + p.ref, async () => {
+                                  await call(`/admin/payments/${p.ref}/paid`, "POST");
+                                  setOverview(await call<Overview>("/admin/overview"));
+                                }, "Activated")
+                              }
+                            >
+                              Mark as paid
+                            </button>
+                          </div>
+                        ))}
+                    </section>
+                  )}
+                  {(overview.employer_posts ?? []).length > 0 && (
+                    <section className="panel">
+                      <h2>Featured vacancy requests ({(overview.employer_posts ?? []).filter((p) => p.status === "pending").length} pending)</h2>
+                      <p className="field-help">
+                        Employers pay {overview.pricing?.featured_listing.etb.toLocaleString()} ETB or ${overview.pricing?.featured_listing.usd} for {overview.pricing?.featured_listing.days} days at the top of the public listings. Approve after payment.
+                      </p>
+                      {(overview.employer_posts ?? []).map((p) => (
+                        <div className="source-row" key={p.id}>
+                          <Megaphone size={18} />
+                          <div>
+                            <strong>
+                              {p.title} · {p.company}
+                            </strong>
+                            <p>
+                              {p.location} · {p.contact_name} ({p.contact_email}) · {p.deadline ? "closes " + p.deadline : "no deadline"} ·{" "}
+                              <a href={p.url} target="_blank" rel="noreferrer">
+                                posting
+                              </a>
+                              {p.note ? " · " + p.note : ""}
+                            </p>
+                            <p>
+                              <span className={"tag " + (p.status === "approved" ? "tag-green" : "")}>{p.status}{p.status === "approved" && p.featured_until ? " until " + new Date(p.featured_until).toLocaleDateString() : ""}</span>
+                            </p>
+                          </div>
+                          <div className="button-row">
+                            {p.status !== "approved" && (
+                              <button className="text-button" onClick={() => act("post-" + p.id, async () => { await call(`/admin/employer-posts/${p.id}`, "PUT", { status: "approved" }); setOverview(await call<Overview>("/admin/overview")); }, "Featured for 14 days")}>
+                                Approve
+                              </button>
+                            )}
+                            {p.status !== "rejected" && (
+                              <button className="text-button" onClick={() => act("post-" + p.id, async () => { await call(`/admin/employer-posts/${p.id}`, "PUT", { status: "rejected" }); setOverview(await call<Overview>("/admin/overview")); })}>
+                                {p.status === "approved" ? "Remove" : "Reject"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </section>
+                  )}
+                  <section className="panel">
+                    <h2>Testimonials ({(overview.testimonials ?? []).length})</h2>
+                    <p className="field-help">Shown on the landing page as soon as one exists. Ask members for one line after their first draft.</p>
+                    {(overview.testimonials ?? []).map((t) => (
+                      <div className="source-row" key={t.id}>
+                        <UserRound size={18} />
+                        <div>
+                          <strong>{t.name}</strong>
+                          <p>
+                            {[t.role, t.organisation].filter(Boolean).join(", ")} · “{t.quote}”
+                          </p>
+                        </div>
+                        <button className="text-button" onClick={() => act("t-" + t.id, async () => { await call(`/admin/testimonials/${t.id}`, "DELETE"); setOverview(await call<Overview>("/admin/overview")); })}>
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    <div className="two-fields">
+                      <label className="field">
+                        Name
+                        <input value={tForm.name} onChange={(e) => setTForm({ ...tForm, name: e.target.value })} placeholder="Ada L." />
+                      </label>
+                      <label className="field">
+                        Role
+                        <input value={tForm.role} onChange={(e) => setTForm({ ...tForm, role: e.target.value })} placeholder="GIS analyst" />
+                      </label>
+                    </div>
+                    <label className="field">
+                      Organisation (optional)
+                      <input value={tForm.organisation} onChange={(e) => setTForm({ ...tForm, organisation: e.target.value })} />
+                    </label>
+                    <label className="field">
+                      Quote
+                      <textarea rows={2} value={tForm.quote} onChange={(e) => setTForm({ ...tForm, quote: e.target.value })} placeholder="One or two sentences in their words." />
+                    </label>
+                    <button
+                      className="button secondary"
+                      disabled={!!busy || tForm.name.trim().length < 2 || tForm.quote.trim().length < 10}
+                      onClick={() =>
+                        act("t-add", async () => {
+                          await call("/admin/testimonials", "POST", tForm);
+                          setTForm({ name: "", role: "", organisation: "", quote: "" });
+                          setOverview(await call<Overview>("/admin/overview"));
+                        }, "Added to the landing page")
+                      }
+                    >
+                      Add testimonial
+                    </button>
+                  </section>
+                  {(overview.enquiries ?? []).length > 0 && (
+                    <section className="panel">
+                      <h2>Institution enquiries ({(overview.enquiries ?? []).length})</h2>
+                      <p className="field-help">
+                        Seat price {overview.pricing?.institution_seat.etb} ETB or ${overview.pricing?.institution_seat.usd} per month, {overview.pricing?.institution_seat.minimum_seats}-seat minimum. Reply by email, then create their members with the Organisation field set.
+                      </p>
+                      {(overview.enquiries ?? []).map((e) => (
+                        <div className="source-row" key={e.id}>
+                          <UserRound size={18} />
+                          <div>
+                            <strong>
+                              {e.organisation} · {e.seats} seats
+                            </strong>
+                            <p>
+                              {e.contact_name} ({e.contact_email}) · {new Date(e.created).toLocaleDateString()}
+                              {e.note ? " · " + e.note : ""}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </section>
+                  )}
+                  <section className="panel">
+                    <h2>
+                      <Megaphone size={18} /> Telegram channel
+                    </h2>
+                    {overview.channel?.enabled ? (
+                      <>
+                        <p className="field-help">
+                          The bot posts new roles daily and a closing-soon digest on Mondays. {overview.channel.posts ?? 0} posts so far
+                          {overview.channel.last_daily ? ` · last daily ${new Date(overview.channel.last_daily).toLocaleString()}` : ""}
+                          {overview.channel.last_weekly ? ` · last weekly ${new Date(overview.channel.last_weekly).toLocaleDateString()}` : ""}.
+                        </p>
+                        <div className="button-row">
+                          <button className="button secondary" disabled={!!busy} onClick={() => act("ch-daily", async () => { const r = await call<{ posted: boolean; reason?: string; roles?: number }>("/admin/channel/post", "POST", { kind: "daily" }); toast[r.posted ? "success" : "error"](r.posted ? `Posted ${r.roles} new roles.` : r.reason || "Nothing to post."); setOverview(await call<Overview>("/admin/overview")); })}>
+                            Post new roles now
+                          </button>
+                          <button className="button secondary" disabled={!!busy} onClick={() => act("ch-weekly", async () => { const r = await call<{ posted: boolean; reason?: string }>("/admin/channel/post", "POST", { kind: "weekly" }); toast[r.posted ? "success" : "error"](r.posted ? "Weekly digest posted." : r.reason || "Nothing to post."); setOverview(await call<Overview>("/admin/overview")); })}>
+                            Post weekly digest now
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="field-help">Not configured. Create a public channel, add the bot as an administrator, and set TELEGRAM_CHANNEL_ID (for example @jobsfindai) on the server. The bot then posts new roles daily and a closing-soon digest on Mondays.</p>
+                    )}
+                  </section>
                   <section className="panel">
                     <h2>Accounts</h2>
                     <div className="table-scroll">

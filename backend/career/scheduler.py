@@ -113,8 +113,14 @@ def scan_loop(stop: threading.Event):
     mailbox or feed cannot hold up everyone else's search."""
     from concurrent.futures import ThreadPoolExecutor
 
+    from . import billing
+
     while not stop.is_set():
         try:
+            with Session() as db:
+                expired = billing.expire_plans(db)
+                if expired:
+                    log.info("%d paid plan(s) expired", expired)
             users = due_users()
             if users:
                 with ThreadPoolExecutor(max_workers=settings.scan_workers, thread_name_prefix="career-user-scan") as pool:
@@ -147,6 +153,9 @@ class Scheduler:
         self.threads.append(threading.Thread(target=scan_loop, args=(self.stop,), name="career-scan", daemon=True))
         if settings.telegram_bot_token:
             self.threads.append(threading.Thread(target=telegram.poll_forever, args=(self.stop,), name="career-telegram", daemon=True))
+        from . import channel
+
+        self.threads.append(threading.Thread(target=channel.loop, args=(self.stop,), name="career-channel", daemon=True))
         for t in self.threads:
             t.start()
 

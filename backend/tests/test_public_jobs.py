@@ -45,7 +45,8 @@ def test_public_listings_show_public_facts_only(client):
     body = anon.get("/api/public/jobs").text
     for private in ("score", "summary", "match", "user_id", "status", "private", "Example Applicant"):
         assert private not in body
-    assert set(d["latest"][0]) == {"title", "company", "location", "source", "posted", "deadline", "url", "excerpt"}
+    assert set(d["latest"][0]) == {"title", "company", "location", "source", "posted", "deadline", "url", "excerpt", "featured", "sectors"}
+    assert "_all" not in d
     assert member.get("/api/state").json()["jobs"]  # member data untouched
 
 

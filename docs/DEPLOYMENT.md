@@ -101,3 +101,27 @@ The Cohort tab shows a "Sponsored seats" tile with how many evaluations ran on y
 - **Untrusted model input.** Postings, CVs, alert emails and careers pages are data, never instructions: the system prompt states this, inputs are passed as JSON data, control characters are stripped and sizes capped, outputs are schema-constrained, evidence references are validated against the verified facts, URLs must appear in the source text, and drafts pass an independent review.
 - **Outbound network.** Sources may only target public addresses, resolved once and pinned for the connection, with redirects re-checked and response sizes capped.
 - **Monitoring.** Server-side events to PostHog (`server_search_completed`, `server_search_failed`, `server_application_drafted`, `server_application_failed`, `server_ai_call_failed`, `server_alert_delivery`, `server_key_cap_reached`) plus backend exceptions in error tracking. Infrastructure metrics and uptime come from Render's dashboard and an external check on `/health`.
+
+
+## Income and promotion (version 0.4)
+
+**Plans and prices.** Free, Pro and Pro Plus, priced in ETB for Ethiopia and USD for cards elsewhere (`PRICE_*` settings). Paid members run on the server's OpenAI key with monthly evaluation caps (600 and 1,500), so keep `SERVER_KEY_MONTHLY_CALLS` and the OpenAI account limit in place. Application-package credits (`package`, `package_5`) work on every plan, including Free.
+
+**Payment routes**, chosen automatically by what is configured:
+- **Chapa** (Telebirr, bank cards, ETB): set `CHAPA_SECRET_KEY`; register the webhook `https://<host>/api/billing/webhook/chapa` with a secret hash in `CHAPA_WEBHOOK_SECRET`. The member is sent to Chapa's hosted checkout, the return URL verifies the transaction server-side, and the webhook is the backup.
+- **Lemon Squeezy** (cards worldwide, USD, merchant of record): create one product per plan and one for packages, paste the hosted checkout links into `LEMON_CHECKOUT_PRO`, `LEMON_CHECKOUT_PRO_PLUS`, `LEMON_CHECKOUT_PACKAGE`, and register the webhook `https://<host>/api/billing/webhook/lemonsqueezy` (events `order_created` and `subscription_payment_success`) with `LEMON_WEBHOOK_SECRET`. The checkout link carries the payment reference in custom data.
+- **Manual** (always available): with no gateway, choosing a plan sends the owner an email and shows the member `BILLING_CONTACT` (a Telebirr number or bank details) with a reference. The owner confirms in the Cohort tab under "Payments awaiting confirmation" and the purchase activates immediately.
+
+Purchases are system records; applying one is idempotent; a month stacks on a running month; lapsed plans return to what the member had (checked by the scheduler).
+
+**Employers.** The landing page's employer form (`/api/employers/post`) creates a pending request and emails the owner. Approving it in the Cohort tab features it for 14 days at the top of the public listings, in the sector pages and in the Telegram digest; rejecting removes it. Price in `FEATURED_LISTING_ETB` / `_USD`.
+
+**Institutions.** The enquiry form (`/api/institutions/enquiry`) emails the owner and lists in the Cohort tab. Seats are priced by `INSTITUTION_SEAT_ETB` / `_USD`; members of an institution get the Organisation field set for group analytics.
+
+**Referrals.** Every member has three personal invitation links under Account; sign-ups through them are attributed (`referred_by`) and counted in the Cohort tab.
+
+**Testimonials.** Added by the owner in the Cohort tab; the landing page's testimonials section appears as soon as one exists (server-rendered).
+
+**Telegram channel.** Create a public channel, add the bot as an administrator, set `TELEGRAM_CHANNEL_ID` (for example `@jobsfindai`). The bot posts new field-relevant roles daily at `TELEGRAM_CHANNEL_DAILY_HOUR` UTC and a closing-soon digest on Mondays, each linking to the public listings with UTM tags. The Cohort tab has "post now" buttons.
+
+**Search traffic.** `/jobs` and `/jobs/<sector>` (data-science, climate, gis-remote-sensing, agriculture, mel, development) are server-rendered, indexable pages with JobPosting structured data; `/sitemap.xml` and `/robots.txt` are served by the app.

@@ -31,6 +31,30 @@ services:
         value: "4000"        # hard cap on model calls charged to OPENAI_API_KEY per month (owner + sponsored)
       - key: AI_ACTIONS_PER_HOUR
         value: "40"          # per-account limit on manual AI actions
+      # --- Income. Prices are in whole units; defaults live in config.py.
+      # - key: PRICE_PRO_ETB          # 350   - key: PRICE_PRO_USD        # 9
+      # - key: PRICE_PRO_PLUS_ETB     # 800   - key: PRICE_PRO_PLUS_USD   # 19
+      # - key: PRICE_PACKAGE_ETB      # 100   - key: PRICE_PACKAGE_USD    # 2
+      # - key: FEATURED_LISTING_ETB   # 2500  - key: INSTITUTION_SEAT_ETB # 200
+      - key: BILLING_CONTACT
+        sync: false          # shown to members paying by hand: "Telebirr 09xx xxx xxx (Name)" or bank details
+      - key: CHAPA_SECRET_KEY
+        sync: false          # Chapa dashboard > Settings > API keys (ETB checkout). Leave unset for manual payments.
+      - key: CHAPA_WEBHOOK_SECRET
+        sync: false          # Chapa dashboard > Settings > Webhooks: URL https://<host>/api/billing/webhook/chapa, secret hash
+      - key: LEMON_CHECKOUT_PRO
+        sync: false          # Lemon Squeezy hosted checkout links for cards (USD); webhook URL /api/billing/webhook/lemonsqueezy
+      - key: LEMON_CHECKOUT_PRO_PLUS
+        sync: false
+      - key: LEMON_CHECKOUT_PACKAGE
+        sync: false
+      - key: LEMON_WEBHOOK_SECRET
+        sync: false
+      # --- Promotion. Public Telegram channel the bot posts to; the bot must be an administrator of it.
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false          # e.g. @jobsfindai
+      - key: TELEGRAM_CHANNEL_DAILY_HOUR
+        value: "7"           # UTC hour of the daily post; the weekly digest goes out on Mondays
       - key: APP_NAME
         value: Jobs Find AI
       - key: PUBLIC_URL

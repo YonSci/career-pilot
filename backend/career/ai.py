@@ -64,14 +64,18 @@ def api_key():
     key for the owner (admin), for sponsored members, and for unscoped runs."""
     user = current_user()
     key = (user or {}).get("openai_key") or ""
-    if not key and (not user or user.get("role") == "admin" or user.get("sponsored")):
+    if not key and (not user or user.get("role") == "admin" or user.get("sponsored") or user.get("plan") in PAID_PLANS):
         key = settings.openai_api_key
     return key
 
 
+PAID_PLANS = ("pro", "pro_plus")
+
+
 def using_server_key():
     user = current_user() or {}
-    return bool(settings.openai_api_key) and not user.get("openai_key") and (user.get("role") == "admin" or bool(user.get("sponsored")))
+    entitled = user.get("role") == "admin" or bool(user.get("sponsored")) or user.get("plan") in PAID_PLANS
+    return bool(settings.openai_api_key) and not user.get("openai_key") and entitled
 
 
 def ai_available():

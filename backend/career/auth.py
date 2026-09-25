@@ -23,8 +23,9 @@ PLANS = {
     "beta": {"label": "Beta (bring your own key)", "sources": 50, "evaluations_per_run": 50, "evaluations_per_month": None, "packages_per_month": 30, "schedule": True},
     # Sponsored members run on the owner's key, so their monthly usage is capped.
     "sponsored": {"label": "Beta (AI included)", "sources": 10, "evaluations_per_run": 25, "evaluations_per_month": 300, "packages_per_month": 5, "schedule": True},
-    "pro": {"label": "Pro", "sources": 50, "evaluations_per_run": 50, "evaluations_per_month": None, "packages_per_month": 8, "schedule": True},
-    "pro_plus": {"label": "Pro Plus", "sources": 50, "evaluations_per_run": 50, "evaluations_per_month": None, "packages_per_month": 30, "schedule": True},
+    # Paid plans include AI on the server key, so monthly evaluations are capped to bound cost.
+    "pro": {"label": "Pro", "sources": 50, "evaluations_per_run": 50, "evaluations_per_month": 600, "packages_per_month": 10, "schedule": True},
+    "pro_plus": {"label": "Pro Plus", "sources": 50, "evaluations_per_run": 50, "evaluations_per_month": 1500, "packages_per_month": 30, "schedule": True},
 }
 
 
@@ -244,6 +245,10 @@ def register(db, email, password, name="", invite=None):
         claim_legacy_records(db, user)
     if invite_row:
         put(db, "invite", invite_row.key, {**invite_row.data, "used_by": user.id, "used_at": now()}, user_id=SYSTEM)
+        note = invite_row.data.get("note") or ""
+        if note.startswith("referral:"):
+            user.settings = {**(user.settings or {}), "referred_by": note.split(":", 1)[1]}
+            db.commit()
     return user
 
 
@@ -325,6 +330,9 @@ def user_metrics(db, user: User):
         "activated": verified > 0 and len(sources) > 0,
         "drafted": any(a.data.get("package") for a in apps),
         "evaluations_this_month": sum(1 for j in jobs if (j.data.get("evaluated") or "").startswith(datetime.now(timezone.utc).strftime("%Y-%m"))),
+        "plan_until": (user.settings or {}).get("plan_until"),
+        "credits": int((user.settings or {}).get("credits") or 0),
+        "referred_by": (user.settings or {}).get("referred_by"),
     }
 
 

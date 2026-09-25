@@ -52,6 +52,9 @@ from . import telegram
 from . import assistant
 from . import telemetry
 from . import public_jobs
+from . import billing
+from . import growth
+from . import channel
 from .ai import server_key_usage
 
 
@@ -69,7 +72,7 @@ async def lifespan(app):
         scheduler.shutdown()
 
 
-VERSION = "0.3.12"
+VERSION = "0.4.0"
 app = FastAPI(title=settings.app_name, version=VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -277,7 +280,208 @@ def public_stats(db=Depends(db_session)):
 def public_job_listings(db=Depends(db_session)):
     """Latest, featured and closing-soon postings from public boards for the landing page.
     Public posting facts only; nothing about members. Cached 10 minutes."""
-    return public_jobs.listings(db)
+    return public_jobs.public_view(public_jobs.listings(db))
+
+
+@app.get("/api/public/pricing")
+def public_pricing():
+    return billing.catalog()
+
+
+@app.get("/api/public/testimonials")
+def public_testimonials(db=Depends(db_session)):
+    return {"testimonials": [{k: t.get(k) for k in ("name", "role", "organisation", "quote")} for t in growth.testimonials(db)]}
+
+
+class EmployerPost(BaseModel):
+    title: str = Field(min_length=3, max_length=200)
+    company: str = Field(min_length=2, max_length=200)
+    location: str = Field(default="", max_length=200)
+    url: str = Field(min_length=8, max_length=2000)
+    description: str = Field(min_length=80, max_length=20000)
+    deadline: str | None = Field(default=None, max_length=10)
+    contact_name: str = Field(min_length=2, max_length=120)
+    contact_email: str = Field(min_length=5, max_length=320)
+    note: str = Field(default="", max_length=500)
+
+
+@app.post("/api/employers/post")
+def employer_post(body: EmployerPost, request: Request, db=Depends(db_session)):
+    """Employers submit a vacancy for a featured slot; the owner approves it after payment."""
+    if "@" not in body.contact_email or not body.url.lower().startswith(("http://", "https://")):
+        raise HTTPException(422, "Enter a valid contact email and a full posting link.")
+    try:
+        accounts.throttle("employer:" + (request.client.host if request.client else "?"), limit=5, window=3600)
+    except ValueError as e:
+        raise HTTPException(429, str(e))
+    post = growth.submit_employer_post(db, body)
+    return {"status": "received", "id": post["id"]}
+
+
+class Enquiry(BaseModel):
+    organisation: str = Field(min_length=2, max_length=200)
+    contact_name: str = Field(min_length=2, max_length=120)
+    contact_email: str = Field(min_length=5, max_length=320)
+    seats: int = Field(default=25, ge=1, le=100000)
+    note: str = Field(default="", max_length=800)
+
+
+@app.post("/api/institutions/enquiry")
+def institution_enquiry(body: Enquiry, request: Request, db=Depends(db_session)):
+    if "@" not in body.contact_email:
+        raise HTTPException(422, "Enter a valid contact email.")
+    try:
+        accounts.throttle("enquiry:" + (request.client.host if request.client else "?"), limit=5, window=3600)
+    except ValueError as e:
+        raise HTTPException(429, str(e))
+    growth.add_enquiry(db, body)
+    return {"status": "received"}
+
+
+@app.get("/jobs", include_in_schema=False)
+@app.get("/jobs/{sector}", include_in_schema=False)
+def sector_jobs_page(sector: str | None = None, db=Depends(db_session)):
+    page = public_jobs.sector_page(public_jobs.listings(db), sector)
+    if page is None:
+        raise HTTPException(404, "Not found")
+    return HTMLResponse(page)
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap_xml(db=Depends(db_session)):
+    return RawResponse(public_jobs.sitemap(public_jobs.listings(db)), media_type="application/xml")
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt():
+    return RawResponse(f"User-agent: *\nAllow: /\nDisallow: /app/\nDisallow: /api/\nSitemap: {settings.public_url.rstrip('/')}/sitemap.xml\n", media_type="text/plain")
+
+
+# --- billing ------------------------------------------------------------------------
+
+
+class CheckoutRequest(BaseModel):
+    product: Literal["pro", "pro_plus", "package", "package_5"]
+    currency: Literal["ETB", "USD"] = "ETB"
+
+
+@app.get("/api/billing")
+def billing_status(user: User = Depends(auth), db=Depends(db_session)):
+    return {**billing.catalog(), **billing.plan_status(user), "payments": [{k: p.get(k) for k in ("ref", "product", "amount", "currency", "provider", "status", "created", "paid_at")} for p in billing.payments(db, user.id)][:20]}
+
+
+@app.post("/api/billing/checkout")
+def billing_checkout(body: CheckoutRequest, user: User = Depends(auth), db=Depends(db_session)):
+    try:
+        accounts.throttle(f"checkout:{user.id}", limit=10, window=3600)
+        return billing.start_checkout(db, user, body.product, body.currency)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/api/billing/return", include_in_schema=False)
+def billing_return(ref: str = "", db=Depends(db_session)):
+    """Where Chapa sends the member back. Verifies server-side, then opens the dashboard."""
+    from fastapi.responses import RedirectResponse
+
+    status = "unknown"
+    if ref and settings.chapa_secret_key:
+        try:
+            status = billing.chapa_verify(db, ref).get("status", "unknown")
+        except Exception as e:
+            logging.getLogger(__name__).warning("Chapa verify failed for %s: %s", ref, type(e).__name__)
+    return RedirectResponse(settings.public_url.rstrip("/") + "/app/?payment=" + status, status_code=303)
+
+
+@app.post("/api/billing/webhook/chapa", include_in_schema=False)
+async def chapa_webhook(request: Request, db=Depends(db_session)):
+    raw = await request.body()
+    signature = request.headers.get("x-chapa-signature") or request.headers.get("chapa-signature") or ""
+    try:
+        billing.chapa_webhook(db, raw, signature)
+    except PermissionError:
+        raise HTTPException(401, "Bad signature.")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/billing/webhook/lemonsqueezy", include_in_schema=False)
+async def lemon_webhook(request: Request, db=Depends(db_session)):
+    raw = await request.body()
+    try:
+        billing.lemon_webhook(db, raw, request.headers.get("x-signature", ""))
+    except PermissionError:
+        raise HTTPException(401, "Bad signature.")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/admin/payments/{ref}/paid")
+def admin_mark_paid(ref: str, _: User = Depends(admin), db=Depends(db_session)):
+    try:
+        return billing.apply_purchase(db, ref, provider_ref="manual")
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+# --- growth: owner moderation, referrals, channel ---------------------------------------
+
+
+class Moderation(BaseModel):
+    status: Literal["approved", "rejected", "pending"]
+
+
+@app.put("/api/admin/employer-posts/{id}")
+def admin_moderate_post(id: str, body: Moderation, _: User = Depends(admin), db=Depends(db_session)):
+    try:
+        post = growth.moderate_employer_post(db, id, body.status)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    public_jobs.reset_cache()
+    _landing_cache.update(at=0.0, html=None)
+    return post
+
+
+class TestimonialInput(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    role: str = Field(default="", max_length=160)
+    organisation: str = Field(default="", max_length=160)
+    quote: str = Field(min_length=10, max_length=600)
+
+
+@app.post("/api/admin/testimonials")
+def admin_add_testimonial(body: TestimonialInput, _: User = Depends(admin), db=Depends(db_session)):
+    return growth.add_testimonial(db, body.name, body.role, body.quote, body.organisation)
+
+
+@app.delete("/api/admin/testimonials/{id}")
+def admin_delete_testimonial(id: str, _: User = Depends(admin), db=Depends(db_session)):
+    try:
+        growth.delete_testimonial(db, id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return {"deleted": True}
+
+
+@app.get("/api/account/referrals")
+def account_referrals(user: User = Depends(auth), db=Depends(db_session)):
+    return {"invites": growth.referral_codes(db, user), "referred": growth.referred_count(db, user.id)}
+
+
+class ChannelPost(BaseModel):
+    kind: Literal["daily", "weekly"] = "daily"
+
+
+@app.post("/api/admin/channel/post")
+def admin_channel_post(body: ChannelPost, _: User = Depends(admin), db=Depends(db_session)):
+    try:
+        return channel.post(body.kind, db)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Telegram refused the post ({type(e).__name__}).")
 
 
 _landing_cache = {"at": 0.0, "html": None}
@@ -298,6 +502,12 @@ def landing_page(db=Depends(db_session)):
     page = index.read_text(encoding="utf-8")
     page = page.replace("<!--JOBS-->", public_jobs.render_cards(data["latest"]), 1)
     page = page.replace("<!--JOBS-JSONLD-->", public_jobs.json_ld(data["latest"], settings.public_url.rstrip("/") + "/#jobs"), 1)
+    quotes = growth.testimonials(db)
+    if quotes:
+        import html as _html
+
+        cards = "".join(f'<div class="quote"><p>“{_html.escape(t["quote"])}”</p><b>{_html.escape(t["name"])}</b><small>{_html.escape(", ".join(x for x in (t.get("role"), t.get("organisation")) if x))}</small></div>' for t in quotes[:6])
+        page = page.replace('<section id="testimonials" class="wrap reveal" hidden>', '<section id="testimonials" class="wrap reveal">', 1).replace("<!--TESTIMONIALS-->", cards, 1)
     _landing_cache.update(at=_time.time(), html=page)
     return HTMLResponse(page)
 
@@ -462,6 +672,12 @@ def admin_overview(_: User = Depends(admin), db=Depends(db_session)):
         "users": metrics,
         "invites": accounts.list_invites(db),
         "waitlist": accounts.list_waitlist(db),
+        "employer_posts": growth.employer_posts(db),
+        "testimonials": growth.testimonials(db),
+        "enquiries": growth.enquiries(db),
+        "payments": billing.payments(db)[:50],
+        "pricing": billing.catalog(),
+        "channel": {"enabled": channel.enabled(), **{k: v for k, v in channel.state(db).items() if k != "posted"}},
         "totals": {
             "users": len(users),
             "activated": sum(1 for m in metrics if m["activated"]),
@@ -643,7 +859,7 @@ def state(user: User = Depends(auth), db=Depends(db_session)):
     limits = accounts.plan_limits(user.plan)
     return {
         "user": user.public(),
-        "plan": {"id": user.plan, **limits, "packages_used": accounts.packages_this_month(db), "evaluations_used": accounts.evaluations_this_month(db)},
+        "plan": {"id": user.plan, **limits, "packages_used": accounts.packages_this_month(db), "evaluations_used": accounts.evaluations_this_month(db), **billing.plan_status(user)},
         "app_name": settings.app_name,
         "profile": read(db, "profile", Profile().model_dump()),
         "preferences": {**Preferences().model_dump(), **read(db, "preferences", {})},
@@ -861,7 +1077,11 @@ def prepare(id: str, tasks: BackgroundTasks, user: User = Depends(auth), db=Depe
         if old["status"] in ("review", "ready") or started > datetime.now(timezone.utc) - timedelta(minutes=10):
             return old
     if not old and accounts.packages_this_month(db) >= accounts.plan_limits(user.plan)["packages_per_month"]:
-        raise HTTPException(403, "Your plan's monthly application limit is reached.")
+        credits = int((user.settings or {}).get("credits") or 0)
+        if credits <= 0:
+            raise HTTPException(403, "Your plan's monthly application limit is reached. Upgrade or buy application packages under Account.")
+        user.settings = {**(user.settings or {}), "credits": credits - 1}
+        db.commit()
     row = put(
         db,
         "application",

@@ -131,6 +131,7 @@
   .job-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--gold-soft); color: #7a5a14; font-weight: 600; font-size: 0.72rem; }
   .job-badge.new { background: var(--green-soft, #e3efe8); color: var(--green); }
   .job-badge.urgent { background: #fbe4e1; color: #a1362a; }
+  .job-badge.featured { background: var(--green); color: #fff; }
   .jobs-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 22px; font-size: 0.86rem; color: var(--muted); }
   .jobs-empty { color: var(--muted); font-size: 0.92rem; grid-column: 1 / -1; }
   @media (max-width: 900px) { .job-list { grid-template-columns: repeat(2, 1fr); } }
@@ -222,6 +223,16 @@
   .form input, .form textarea { width: 100%; padding: 13px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: #fff; font: inherit; font-size: 0.95rem; }
   .form input::placeholder, .form textarea::placeholder { color: rgba(255,255,255,.55); }
   .form .ok { color: #cfe8d8; font-size: 0.9rem; } .form .err { color: #ffd2c2; font-size: 0.9rem; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .split .lead { margin-bottom: 14px; }
+  .form.light { background: #fff; border: 1px solid var(--line); border-radius: 22px; padding: 26px; }
+  .form.light label { color: var(--ink-2); }
+  .form.light input, .form.light textarea { background: #fbfaf7; color: var(--ink); border-color: var(--line); }
+  .form.light input::placeholder, .form.light textarea::placeholder { color: var(--muted); }
+  .form.light .ok { color: var(--green); } .form.light .err { color: #a1362a; }
+  .form .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+  @media (max-width: 560px) { .form .two { grid-template-columns: 1fr; } }
 
   footer { padding: 34px 0 44px; color: var(--muted); font-size: 0.86rem; }
   footer .wrap { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
@@ -258,6 +269,7 @@
       <a class="link" href="#features">Features</a>
       <a class="link" href="#how">How it works</a>
       <a class="link" href="#pricing">Pricing</a>
+      <a class="link" href="#employers">Employers</a>
       <a class="link" href="#faq">FAQ</a>
       <a class="btn btn-ghost" href="/app/">Sign in</a>
       <a class="btn btn-primary" href="#invite">Request an invite</a>
@@ -347,7 +359,7 @@
   </div>
   <div class="job-list" id="job-list"><!--JOBS--></div>
   <div class="jobs-foot">
-    <span id="jobs-updated">Public postings only, refreshed every ten minutes. Sign in to see how each one matches your verified CV.</span>
+    <span id="jobs-updated">Public postings only, refreshed every ten minutes. Browse by field: <a href="/jobs/data-science">Data &amp; AI</a> · <a href="/jobs/climate">Climate</a> · <a href="/jobs/gis-remote-sensing">GIS</a> · <a href="/jobs/agriculture">Agriculture</a> · <a href="/jobs/mel">MEL</a> · <a href="/jobs/development">Development</a> · <a href="/jobs">All</a></span>
     <a class="btn btn-primary" href="#invite">Get matched to these roles</a>
   </div>
 </section>
@@ -426,38 +438,75 @@
 <!-- Testimonials: remove the hidden attribute once the first quotes are in. -->
 <section id="testimonials" class="wrap reveal" hidden>
   <div class="section-head"><span class="eyebrow">From the beta</span><h2>What members say.</h2></div>
-  <div class="quotes">
-    <div class="quote"><p>"Quote goes here."</p><b>Name</b><small>Role, organisation</small></div>
-    <div class="quote"><p>"Quote goes here."</p><b>Name</b><small>Role, organisation</small></div>
-    <div class="quote"><p>"Quote goes here."</p><b>Name</b><small>Role, organisation</small></div>
-  </div>
+  <div class="quotes"><!--TESTIMONIALS--></div>
 </section>
 
 <section id="pricing" class="wrap reveal">
   <div class="section-head">
     <span class="eyebrow">Pricing</span>
     <h2>Free to start. Pay for depth when it earns its keep.</h2>
-    <p class="lead">The beta is free by invitation. The first members get AI usage included on the founder's key (with monthly limits); later members use their own OpenAI key. The paid plans are planned for after the beta.</p>
+    <p class="lead">The beta is free by invitation, with AI usage included for the first members. Paid plans are priced for Ethiopia in birr, with card payment in dollars for everyone else. Pay in birr by Telebirr or bank transfer, or by card.</p>
   </div>
-  <div class="offer">◆ <span><b>Founding-member offer:</b> everyone who joins during the beta keeps Pro at 5 USD a month for the first year. Regional pricing about 40 to 50 percent lower in Africa and South Asia.</span></div>
+  <div class="offer">◆ <span><b>Founding-member offer:</b> everyone who joins during the beta keeps Pro at half price for the first year.</span></div>
   <div class="plans">
     <div class="plan"><div class="name">Free</div><div class="price">$0<small> / month</small></div><div class="for">Feel the value before paying anything.</div>
       <ul><li>Manual jobs and 2 sources</li><li>10 AI evaluations per search, run by hand</li><li>1 application package a month</li><li>In-app inbox and verified evidence bank</li></ul>
       <a class="btn btn-ghost" href="#invite">Request an invite</a></div>
-    <div class="plan hot"><div class="name">Pro</div><div class="price">$9<small> / month · $79 / year</small></div><div class="for">Continuous search with alerts and drafting.</div>
-      <ul><li>Up to 50 sources, including email alerts</li><li>50 evaluations per scheduled search</li><li>Telegram and email alerts</li><li>8 evidence-checked application packages a month</li></ul>
+    <div class="plan hot"><div class="name">Pro</div><div class="price"><span data-price="pro-etb">350</span> ETB<small> / month · $<span data-price="pro-usd">9</span> international</small></div><div class="for">Continuous search with alerts and drafting. AI included.</div>
+      <ul><li>Up to 50 sources, including email alerts</li><li>50 evaluations per scheduled search, 600 a month</li><li>Telegram and email alerts</li><li>10 evidence-checked application packages a month</li></ul>
       <a class="btn btn-primary" href="#invite">Request an invite</a></div>
-    <div class="plan"><div class="name">Pro Plus</div><div class="price">$19<small> / month</small></div><div class="for">For an active search across many roles.</div>
-      <ul><li>Everything in Pro</li><li>30 application packages a month</li><li>Digest mode and priority processing</li><li>Application history and exports</li></ul>
+    <div class="plan"><div class="name">Pro Plus</div><div class="price"><span data-price="pro_plus-etb">800</span> ETB<small> / month · $<span data-price="pro_plus-usd">19</span> international</small></div><div class="for">For an active search across many roles.</div>
+      <ul><li>Everything in Pro</li><li>30 application packages a month</li><li>1,500 evaluations a month, priority processing</li><li>Application history and exports</li></ul>
       <a class="btn btn-ghost" href="#invite">Request an invite</a></div>
-    <div class="plan"><div class="name">Bring your own key</div><div class="price">$4<small> / month · free in the beta</small></div><div class="for">Use your own OpenAI key; pay only for the platform.</div>
+    <div class="plan"><div class="name">Bring your own key</div><div class="price">Free<small> during the beta</small></div><div class="for">Use your own OpenAI key; pay only for the platform later.</div>
       <ul><li>Everything in Pro Plus</li><li>AI usage billed by OpenAI to you</li><li>Set your own spending limits on your OpenAI account</li><li>What every beta member has today</li></ul>
       <a class="btn btn-ghost" href="#invite">Request an invite</a></div>
   </div>
   <div class="addons">
-    <div class="addon"><b>Extra application packages</b>$2 each, or 5 for $8. A tailored, reviewed application the night before a deadline.</div>
-    <div class="addon"><b>Teams and institutions</b>From $300 a year per cohort: career centres, fellowship alumni programmes, bootcamps and NGO talent networks. Seats, an admin view and an onboarding session.</div>
-    <div class="addon"><b>Payment</b>Cards worldwide through a merchant of record; local options for Ethiopia planned. Annual plans and invoices available for institutions.</div>
+    <div class="addon"><b>Extra application packages</b><span data-price="package-etb">100</span> ETB or $<span data-price="package-usd">2</span> each, 5 for <span data-price="package_5-etb">400</span> ETB or $<span data-price="package_5-usd">8</span>. Credits never expire and work on the Free plan too.</div>
+    <div class="addon"><b>Teams and institutions</b><span data-price="seat-etb">200</span> ETB or $<span data-price="seat-usd">3</span> per seat per month, from <span data-price="seat-min">25</span> seats: career centres, fellowship alumni programmes, bootcamps and NGO talent networks. <a href="#institutions">Ask for a quote</a>.</div>
+    <div class="addon"><b>Employers</b>Feature a vacancy at the top of the public listings and in the Telegram digest for <span data-price="featured-days">14</span> days: <span data-price="featured-etb">2,500</span> ETB or $<span data-price="featured-usd">25</span>. <a href="#employers">Submit a vacancy</a>.</div>
+  </div>
+</section>
+
+<section id="employers" class="wrap reveal">
+  <div class="split">
+    <div>
+      <span class="eyebrow">For employers</span>
+      <h2>Reach the data, climate and development professionals who are actually looking.</h2>
+      <p class="lead">A featured vacancy sits at the top of the public listings and the Telegram digest for <span data-price="featured-days">14</span> days, and every member whose verified CV fits it is alerted with the reasons. <b><span data-price="featured-etb">2,500</span> ETB or $<span data-price="featured-usd">25</span></b> per posting; we confirm by email and publish once paid.</p>
+      <p class="lead" style="font-size:.95rem">Public postings from ReliefWeb and employer boards are listed free, with a link to your own application page. Featuring adds the top slot, the digest and member alerts.</p>
+    </div>
+    <form class="form light" id="employer-form" novalidate>
+      <div class="two"><label>Job title<input name="title" required maxlength="200" placeholder="Hydrologist, Early Warning" /></label><label>Organisation<input name="company" required maxlength="200" /></label></div>
+      <div class="two"><label>Location<input name="location" maxlength="200" placeholder="Addis Ababa or Remote" /></label><label>Application deadline<input name="deadline" type="date" /></label></div>
+      <label>Link to the posting or application page<input name="url" type="url" required placeholder="https://" /></label>
+      <label>Description (the full text or a summary, at least a paragraph)<textarea name="description" rows="4" required minlength="80"></textarea></label>
+      <div class="two"><label>Your name<input name="contact_name" required maxlength="120" /></label><label>Work email<input name="contact_email" type="email" required /></label></div>
+      <label>Anything else (optional)<input name="note" maxlength="500" /></label>
+      <button class="btn btn-primary" type="submit">Submit for featuring</button>
+      <p class="ok" hidden>Thank you. We will email you within one working day with payment details; the vacancy goes live as soon as it is confirmed.</p>
+      <p class="err" hidden></p>
+    </form>
+  </div>
+</section>
+
+<section id="institutions" class="wrap reveal">
+  <div class="split">
+    <div>
+      <span class="eyebrow">For institutions</span>
+      <h2>Give a whole cohort a job-search assistant.</h2>
+      <p class="lead">Career centres, fellowship and alumni programmes, bootcamps and NGO talent networks: every member gets their own private workspace, and you get an activation view (verified CV, sources, drafts) for the cohort. <b><span data-price="seat-etb">200</span> ETB or $<span data-price="seat-usd">3</span> per seat per month</b>, from <span data-price="seat-min">25</span> seats, invoiced annually or per term, with an onboarding session included.</p>
+    </div>
+    <form class="form light" id="institution-form" novalidate>
+      <label>Organisation<input name="organisation" required maxlength="200" /></label>
+      <div class="two"><label>Your name<input name="contact_name" required maxlength="120" /></label><label>Work email<input name="contact_email" type="email" required /></label></div>
+      <label>How many people?<input name="seats" type="number" min="1" max="100000" value="25" /></label>
+      <label>What would you like to achieve? (optional)<textarea name="note" rows="3" maxlength="800"></textarea></label>
+      <button class="btn btn-primary" type="submit">Ask for a quote</button>
+      <p class="ok" hidden>Thank you. You will hear from us within one working day.</p>
+      <p class="err" hidden></p>
+    </form>
   </div>
 </section>
 
@@ -567,7 +616,7 @@
     const card = (j) => {
       const days = j.deadline ? Math.floor((new Date(j.deadline.slice(0, 10) + "T23:59:59Z") - Date.now()) / 86400000) : null;
       const fresh = j.posted && (Date.now() - new Date(j.posted)) / 86400000 <= 3;
-      const badges = (fresh ? '<span class="job-badge new">New</span>' : "") + (days !== null ? `<span class="job-badge ${days <= 5 ? "urgent" : ""}">Closes ${days <= 0 ? "today" : "in " + days + " day" + (days === 1 ? "" : "s")}</span>` : "");
+      const badges = (j.featured ? '<span class="job-badge featured">Featured</span>' : "") + (fresh ? '<span class="job-badge new">New</span>' : "") + (days !== null ? `<span class="job-badge ${days <= 5 ? "urgent" : ""}">Closes ${days <= 0 ? "today" : "in " + days + " day" + (days === 1 ? "" : "s")}</span>` : "");
       const meta = [esc(j.source), j.posted ? "Posted " + fmt(j.posted) : ""].filter(Boolean).join(" · ");
       return `<article class="job-item"><a class="job-link" href="${esc(j.url)}" target="_blank" rel="noopener nofollow" data-title="${esc(j.title)}">${esc(j.title)}</a><p class="job-org">${esc(j.company)}${j.company && j.location ? " · " : ""}${esc(j.location)}</p><p class="job-meta">${meta}${badges}</p></article>`;
     };
@@ -587,6 +636,33 @@
     tabs.forEach((t) => t.addEventListener("click", () => { show(t.dataset.list); track("public_jobs_tab_clicked", { list: t.dataset.list }); }));
     list.addEventListener("click", (e) => { const a = e.target.closest("a.job-link"); if (a) track("public_job_clicked", { title: a.dataset.title, list: document.querySelector('.jobs-tabs [aria-selected="true"]').dataset.list }); });
   })();
+
+  // Prices from the server (single source of truth) and the employer / institution forms.
+  fetch("/api/public/pricing").then((r) => r.json()).then((p) => {
+    const fill = (k, v) => document.querySelectorAll(`[data-price="${k}"]`).forEach((el) => (el.textContent = typeof v === "number" ? v.toLocaleString() : v));
+    fill("pro-etb", p.plans.pro.etb); fill("pro-usd", p.plans.pro.usd); fill("pro_plus-etb", p.plans.pro_plus.etb); fill("pro_plus-usd", p.plans.pro_plus.usd);
+    fill("package-etb", p.package.etb); fill("package-usd", p.package.usd); fill("package_5-etb", p.package_5.etb); fill("package_5-usd", p.package_5.usd);
+    fill("seat-etb", p.institution_seat.etb); fill("seat-usd", p.institution_seat.usd); fill("seat-min", p.institution_seat.minimum_seats);
+    fill("featured-etb", p.featured_listing.etb); fill("featured-usd", p.featured_listing.usd); fill("featured-days", p.featured_listing.days);
+  }).catch(() => {});
+  const wireForm = (id, path, event) => {
+    const f = document.getElementById(id);
+    if (!f) return;
+    const ok = f.querySelector(".ok"), err = f.querySelector(".err");
+    f.addEventListener("submit", async (e) => {
+      e.preventDefault(); ok.hidden = true; err.hidden = true;
+      const data = Object.fromEntries(new FormData(f).entries());
+      if (data.seats) data.seats = Number(data.seats) || 1;
+      if (data.deadline === "") delete data.deadline;
+      try {
+        const r = await fetch(path, { method: "POST", headers: H, body: JSON.stringify(data) });
+        if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(typeof j.detail === "string" ? j.detail : "Please check the form: every required field needs a value."); }
+        f.reset(); ok.hidden = false; track(event, {});
+      } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+    });
+  };
+  wireForm("employer-form", "/api/employers/post", "employer_post_submitted");
+  wireForm("institution-form", "/api/institutions/enquiry", "institution_enquiry_submitted");
 
   // Live totals
   fetch("/api/public/stats").then((r) => r.json()).then((s) => {

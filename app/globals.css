@@ -1440,3 +1440,21 @@ h1 {
 .assistant-msg.assistant { align-self: flex-start; background: #f1f3ef; }
 .assistant-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #e3e6e1; }
 .assistant-input input { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid #e3e6e1; font: inherit; }
+
+/* Billing and growth panels */
+.currency-toggle { display: flex; gap: 8px; margin: 10px 0 14px; }
+.chip { border: 1px solid var(--border, #e6e3dc); background: transparent; border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 0.85rem; cursor: pointer; }
+.chip-on { background: var(--green, #2f5d4a); color: #fff; border-color: transparent; }
+.plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.plan-card { border: 1px solid var(--border, #e6e3dc); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+.plan-card.plan-current { border-color: var(--green, #2f5d4a); }
+.plan-card b { font-size: 1rem; }
+.plan-price { font-weight: 700; color: var(--green, #2f5d4a); }
+.plan-card small { color: var(--muted, #6b7a73); font-size: 0.8rem; flex: 1; }
+.plan-card .button { margin-top: 6px; }
+.notice { background: var(--gold-soft, #f7efdd); color: #6d4f10; border-radius: 10px; padding: 12px 14px; font-size: 0.9rem; margin-top: 12px; }
+.payment-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; font-size: 0.85rem; }
+.payment-list li { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.referral-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border, #e6e3dc); font-size: 0.85rem; }
+.referral-row code { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.button-row { display: flex; gap: 8px; flex-wrap: wrap; }
