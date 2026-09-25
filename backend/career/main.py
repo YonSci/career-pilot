@@ -24,6 +24,7 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from .config import settings
 from .db import (
+    SYSTEM,
     Session,
     Record,
     User,
@@ -45,7 +46,7 @@ from .documents import extract_text, package_zip
 from .ai import extract_profile, ai_available, verify_key
 from .sources import validate_source, collect, Context, SUGGESTED_SOURCES, KIND_LABELS, imap_check
 from .service import ingest, evaluate, expired, prepare_application, run_scan
-from .notifications import availability, test_alert
+from .notifications import availability, test_alert, send_invitation
 from .scheduler import scheduler
 from . import telegram
 from . import assistant
@@ -68,7 +69,7 @@ async def lifespan(app):
         scheduler.shutdown()
 
 
-VERSION = "0.3.11"
+VERSION = "0.3.12"
 app = FastAPI(title=settings.app_name, version=VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -485,6 +486,40 @@ class InviteRequest(BaseModel):
 @app.post("/api/admin/invites")
 def admin_invites(body: InviteRequest, _: User = Depends(admin), db=Depends(db_session)):
     return {"codes": accounts.create_invites(db, body.count, body.note)}
+
+
+class WaitlistInvite(BaseModel):
+    emails: list[str] = Field(min_length=1, max_length=50)
+
+
+@app.post("/api/admin/waitlist/invite")
+def admin_invite_waitlist(body: WaitlistInvite, _: User = Depends(admin), db=Depends(db_session)):
+    """Create a personal invite code for each address and email the sign-up link.
+    Addresses not on the waitlist are added to it. Existing accounts are skipped.
+    When email is not configured the code is still created and returned for sharing by hand."""
+    results = []
+    mailer = bool(settings.smtp_host and settings.email_from)
+    for raw in body.emails:
+        email = (raw or "").strip().lower()
+        if "@" not in email or len(email) > 320:
+            results.append({"email": raw, "status": "invalid"})
+            continue
+        if db.query(User).filter_by(email=email).first():
+            results.append({"email": email, "status": "already_registered"})
+            continue
+        entry = read(db, "waitlist:" + email, user_id=SYSTEM) or {}
+        code = entry.get("code") if entry.get("invited") and entry.get("code") else accounts.create_invites(db, 1, note=email)[0]
+        entry = accounts.mark_invited(db, email, code)
+        status = "code_only"
+        if mailer:
+            try:
+                send_invitation(email, entry.get("name", ""), code)
+                status = "sent"
+            except Exception as e:
+                logging.getLogger(__name__).warning("Invitation email to %s failed: %s", email, type(e).__name__)
+                status = "email_failed"
+        results.append({"email": email, "status": status, "code": code, "link": settings.public_url.rstrip("/") + "/app/?invite=" + code})
+    return {"results": results, "email_configured": mailer}
 
 
 class UserEdit(BaseModel):

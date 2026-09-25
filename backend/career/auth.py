@@ -187,6 +187,14 @@ def add_waitlist(db, email, name="", note=""):
     return key
 
 
+def mark_invited(db, email, code):
+    """Record that a waitlist request received a personal invite code (creates the entry if needed)."""
+    key = add_waitlist(db, email)
+    entry = read(db, key, user_id=SYSTEM) or {}
+    put(db, "waitlist", key, {**entry, "invited": now(), "code": code}, user_id=SYSTEM)
+    return entry
+
+
 def list_waitlist(db):
     return sorted((r.data for r in rows(db, "waitlist", user_id=SYSTEM)), key=lambda w: w.get("created", ""), reverse=True)
 

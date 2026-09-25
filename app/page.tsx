@@ -210,7 +210,7 @@ type Metrics = Account & {
 type Overview = {
   users: Metrics[];
   invites: { code: string; note: string; created: string; used_by: string | null }[];
-  waitlist: { email: string; name: string; note: string; created: string }[];
+  waitlist: { email: string; name: string; note: string; created: string; invited?: string | null; code?: string }[];
   totals: { users: number; activated: number; drafted: number; with_key: number; telegram: number; sponsored?: number; sponsored_seats?: number; sponsored_evaluations_this_month?: number; server_key_calls_this_month?: number; server_key_monthly_cap?: number };
   plans: Record<string, { label: string }>;
 };
@@ -1991,8 +1991,27 @@ export default function Home() {
                   </section>
                   {overview.waitlist && overview.waitlist.length > 0 && (
                     <section className="panel">
-                      <h2>Invitation requests ({overview.waitlist.length})</h2>
-                      <p className="field-help">From the landing page. Generate a code above and send it to them.</p>
+                      <div className="panel-head">
+                        <h2>Invitation requests ({overview.waitlist.length})</h2>
+                        {overview.waitlist.some((w) => !w.invited) && (
+                          <button
+                            className="button secondary"
+                            disabled={busy === "invite-all"}
+                            onClick={() =>
+                              act("invite-all", async () => {
+                                const r = await call<{ results: { email: string; status: string }[]; email_configured: boolean }>("/admin/waitlist/invite", "POST", { emails: overview.waitlist.filter((w) => !w.invited).map((w) => w.email) });
+                                const sent = r.results.filter((x) => x.status === "sent").length;
+                                const failed = r.results.filter((x) => x.status === "email_failed").length;
+                                toast[failed ? "error" : "success"](r.email_configured ? `${sent} invitation${sent === 1 ? "" : "s"} emailed${failed ? `, ${failed} failed (codes created, share them by hand)` : ""}.` : "Codes created. Email is not configured on this server, so share the links by hand.");
+                                setOverview(await call<Overview>("/admin/overview"));
+                              })
+                            }
+                          >
+                            Invite everyone pending
+                          </button>
+                        )}
+                      </div>
+                      <p className="field-help">From the landing page. Sending an invitation creates a personal code and emails the sign-up link.</p>
                       {overview.waitlist.map((w) => (
                         <div className="source-row" key={w.email}>
                           <UserRound size={18} />
@@ -2001,8 +2020,26 @@ export default function Home() {
                             <p>
                               {w.email}
                               {w.note ? " · " + w.note : ""} · {new Date(w.created).toLocaleDateString()}
+                              {w.invited ? ` · invited ${new Date(w.invited).toLocaleDateString()}${w.code ? " · code " + w.code : ""}` : ""}
                             </p>
                           </div>
+                          <button
+                            className="text-button"
+                            disabled={busy === "invite-" + w.email}
+                            onClick={() =>
+                              act("invite-" + w.email, async () => {
+                                const r = await call<{ results: { email: string; status: string; link?: string }[]; email_configured: boolean }>("/admin/waitlist/invite", "POST", { emails: [w.email] });
+                                const x = r.results[0];
+                                if (x.status === "sent") toast.success("Invitation emailed to " + w.email + ".");
+                                else if (x.status === "already_registered") toast.success(w.email + " already has an account.");
+                                else if (x.status === "email_failed") toast.error("Email failed; share this link by hand: " + x.link);
+                                else toast.success("Code created. Share this link: " + x.link);
+                                setOverview(await call<Overview>("/admin/overview"));
+                              })
+                            }
+                          >
+                            {w.invited ? "Resend invitation" : "Send invitation"}
+                          </button>
                         </div>
                       ))}
                     </section>

@@ -166,6 +166,41 @@ def email_send(subject, text, to=None):
         server.send_message(msg)
 
 
+def invitation_text(name, code):
+    link = settings.public_url.rstrip("/") + "/app/?invite=" + code
+    greeting = f"Hello {name.split()[0]}," if name else "Hello,"
+    return "\n".join(
+        [
+            greeting,
+            "",
+            f"Thank you for requesting an invitation to {settings.app_name}. Your seat is ready.",
+            "",
+            "Create your account with this personal link (the code is filled in for you):",
+            link,
+            "",
+            f"Your invitation code, if you need to type it: {code}",
+            "",
+            "Getting started takes about ten minutes:",
+            "1. My evidence: upload your CV and verify the facts extracted from it.",
+            "2. Job sources: add the suggested boards for your field.",
+            "3. Run search: every posting is scored against your verified CV, with the reasons.",
+            "4. Account: link Telegram to receive matches as they arrive.",
+            "",
+            "AI usage is included for the first members, so you do not need your own OpenAI key.",
+            "The link is personal; please do not forward it.",
+            "",
+            "Reply to this email if anything is unclear.",
+            "",
+            settings.app_name,
+            settings.public_url,
+        ]
+    )
+
+
+def send_invitation(email, name, code):
+    email_send(f"Your invitation to {settings.app_name}", invitation_text(name, code), to=email)
+
+
 def whatsapp_send(job, match, job_id):
     r = httpx.post(
         f"https://api.twilio.com/2010-04-01/Accounts/{settings.twilio_account_sid}/Messages.json",
