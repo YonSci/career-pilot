@@ -1450,7 +1450,7 @@ h1 {
 .plan-card.plan-current { border-color: var(--green, #2f5d4a); }
 .plan-card b { font-size: 1rem; }
 .plan-price { font-weight: 700; color: var(--green, #2f5d4a); }
-.plan-card small { color: var(--muted, #6b7a73); font-size: 0.8rem; flex: 1; }
+.plan-card small { color: #5b6b64; font-size: 0.82rem; flex: 1; }
 .plan-card .button { margin-top: 6px; }
 .notice { background: var(--gold-soft, #f7efdd); color: #6d4f10; border-radius: 10px; padding: 12px 14px; font-size: 0.9rem; margin-top: 12px; }
 .payment-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; font-size: 0.85rem; }
