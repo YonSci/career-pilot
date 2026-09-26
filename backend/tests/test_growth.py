@@ -103,7 +103,7 @@ def test_channel_posts_and_sector_pages(client, monkeypatch):
     assert r == {"posted": True, "kind": "daily", "roles": 3}
     method, payload = sent[0]
     assert method == "sendMessage" and payload["chat_id"] == "@examplejobs" and payload["parse_mode"] == "HTML"
-    assert "Hydrologist" in payload["text"] and "Data &lt;Scientist&gt;" in payload["text"] and "Water Org · Kenya" in payload["text"] and "utm_source=telegram" in payload["text"]
+    assert "Hydrologist" in payload["text"] and "Data &lt;Scientist&gt;" in payload["text"] and "Water Org · Kenya" in payload["text"] and "utm_source=telegram&amp;utm_medium=channel" in payload["text"] and "&utm_medium" not in payload["text"].replace("&amp;", "")
     # Nothing new: no second daily post. Weekly lists the closing role.
     assert client.post("/api/admin/channel/post", json={"kind": "daily"}).json()["posted"] is False
     assert client.post("/api/admin/channel/post", json={"kind": "weekly"}).json()["posted"] is True and "GIS Analyst" in sent[1][1]["text"]

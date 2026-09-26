@@ -481,7 +481,16 @@ def admin_channel_post(body: ChannelPost, _: User = Depends(admin), db=Depends(d
     except ValueError as e:
         raise HTTPException(422, str(e))
     except Exception as e:
-        raise HTTPException(502, f"Telegram refused the post ({type(e).__name__}).")
+        detail = ""
+        response = getattr(e, "response", None)
+        if response is not None:
+            try:
+                detail = ": " + str(response.json().get("description", ""))[:200]
+            except Exception:
+                detail = ""
+        elif isinstance(e, ValueError):
+            detail = ": " + str(e)[:200]
+        raise HTTPException(502, f"Telegram refused the post ({type(e).__name__}{detail}).")
 
 
 _landing_cache = {"at": 0.0, "html": None}

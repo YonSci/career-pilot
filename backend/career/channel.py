@@ -31,7 +31,9 @@ def _save(db, s):
 
 
 def _site(tag):
-    return settings.public_url.rstrip("/") + f"/?utm_source=telegram&utm_medium=channel&utm_campaign={tag}#jobs"
+    """Landing link with campaign tags, escaped for Telegram's HTML parser (a bare & is rejected)."""
+    url = settings.public_url.rstrip("/") + f"/?utm_source=telegram&utm_medium=channel&utm_campaign={tag}#jobs"
+    return f'<a href="{html.escape(url, quote=True)}">{html.escape(url)}</a>'
 
 
 def _line(j):
