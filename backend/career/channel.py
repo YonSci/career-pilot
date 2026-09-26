@@ -39,7 +39,9 @@ def _site(tag):
 def _line(j):
     where = " · ".join(x for x in (j.get("company"), j.get("location") if j.get("location") != "Not specified" else "") if x)
     deadline = f" (closes {j['deadline'][:10]})" if j.get("deadline") else ""
-    return f"• <a href=\"{html.escape(j['url'], quote=True)}\">{html.escape(j['title'])}</a>{(' — ' + html.escape(where)) if where else ''}{deadline}"
+    # Link to our page for the role (apply link, sharing, similar roles), tagged for analytics.
+    href = settings.public_url.rstrip("/") + "/job/" + j["slug"] + "?utm_source=telegram&utm_medium=channel" if j.get("slug") else j["url"]
+    return f"• <a href=\"{html.escape(href, quote=True)}\">{html.escape(j['title'])}</a>{(' — ' + html.escape(where)) if where else ''}{deadline}"
 
 
 def daily_message(db):

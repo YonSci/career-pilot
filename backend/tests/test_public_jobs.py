@@ -45,7 +45,7 @@ def test_public_listings_show_public_facts_only(client):
     body = anon.get("/api/public/jobs").text
     for private in ("score", "summary", "match", "user_id", "status", "private", "Example Applicant"):
         assert private not in body
-    assert set(d["latest"][0]) == {"title", "company", "location", "source", "posted", "deadline", "url", "excerpt", "featured", "sectors"}
+    assert set(d["latest"][0]) == {"title", "company", "location", "source", "posted", "deadline", "url", "excerpt", "featured", "sectors", "slug", "org_slug", "location_class", "salary", "contract", "work_type"}
     assert "_all" not in d
     assert member.get("/api/state").json()["jobs"]  # member data untouched
 
@@ -92,4 +92,4 @@ def test_channel_link_appears_when_a_public_channel_is_configured(client, monkey
     monkeypatch.setattr(settings, "telegram_channel_id", "@jobs_find_ai_alerts")
     m._landing_cache.update(at=0.0, html=None)
     page = TestClient(app).get("/").text
-    assert page.count('href="https://t.me/jobs_find_ai_alerts"') == 2 and "Daily roles on Telegram" in page and "<!--CHANNEL-->" not in page
+    assert page.count('href="https://t.me/jobs_find_ai_alerts"') == 2 and "Join on Telegram" in page and "<!--CHANNEL-BANNER-->" not in page

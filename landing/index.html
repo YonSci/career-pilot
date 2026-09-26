@@ -135,6 +135,13 @@
   .jobs-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 22px; font-size: 0.86rem; color: var(--muted); }
   .jobs-empty { color: var(--muted); font-size: 0.92rem; grid-column: 1 / -1; }
   .jobs-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .banner { margin: 40px 0 0; background: linear-gradient(120deg, #2f5d4a, #1f3f33); color: #fff; border-radius: 22px; padding: 28px 30px; display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+  .banner .ico { width: 56px; height: 56px; border-radius: 14px; background: rgba(255,255,255,.14); display: grid; place-items: center; flex: none; }
+  .banner .ico svg { width: 28px; height: 28px; }
+  .banner .txt { flex: 1; min-width: 240px; }
+  .banner b { display: block; font-family: Fraunces, Georgia, serif; font-size: 1.45rem; line-height: 1.15; margin-bottom: 6px; font-weight: 600; }
+  .banner p { margin: 0; color: rgba(255,255,255,.82); }
+  .banner .cta { background: #fff; color: #1f3f33; padding: 12px 20px; border-radius: 999px; text-decoration: none; font-weight: 700; display: inline-flex; gap: 8px; align-items: center; }
   @media (max-width: 900px) { .job-list { grid-template-columns: repeat(2, 1fr); } }
   .jobs-tabs .short { display: none; }
   @media (max-width: 560px) { .job-list { grid-template-columns: 1fr; } .jobs-tabs { width: 100%; justify-content: space-between; } .jobs-tabs button { padding: 8px 10px; font-size: 0.82rem; white-space: nowrap; flex: 1; } .jobs-tabs .full { display: none; } .jobs-tabs .short { display: inline; } }
@@ -271,6 +278,7 @@
       <a class="link" href="#how">How it works</a>
       <a class="link" href="#pricing">Pricing</a>
       <a class="link" href="#employers">Employers</a>
+      <a class="link" href="/guide">Guide</a>
       <a class="link" href="#faq">FAQ</a>
       <a class="btn btn-ghost" href="/app/">Sign in</a>
       <a class="btn btn-primary" href="#invite">Request an invite</a>
@@ -361,8 +369,9 @@
   <div class="job-list" id="job-list"><!--JOBS--></div>
   <div class="jobs-foot">
     <span id="jobs-updated">Public postings only, refreshed every ten minutes. Browse by field: <a href="/jobs/data-science">Data &amp; AI</a> · <a href="/jobs/climate">Climate</a> · <a href="/jobs/gis-remote-sensing">GIS</a> · <a href="/jobs/agriculture">Agriculture</a> · <a href="/jobs/mel">MEL</a> · <a href="/jobs/development">Development</a> · <a href="/jobs">All</a></span>
-    <span class="jobs-actions"><!--CHANNEL--><a class="btn btn-primary" href="#invite">Get matched to these roles</a></span>
+    <span class="jobs-actions"><a class="btn btn-ghost" href="/jobs">Search all roles</a><a class="btn btn-primary" href="#invite">Get matched to these roles</a></span>
   </div>
+  <!--CHANNEL-BANNER-->
 </section>
 
 <section id="sectors" class="wrap reveal">
@@ -543,7 +552,7 @@
 <footer>
   <div class="wrap">
     <span>© <span id="year"></span> Jobs Find AI · A personal approach to your next role.</span>
-    <span><!--CHANNEL-FOOT--><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/app/">Sign in</a></span>
+    <span><a href="/jobs">Jobs</a><a href="/organisations">Employers</a><a href="/guide">Guide</a><!--CHANNEL-FOOT--><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/app/">Sign in</a></span>
   </div>
 </footer>
 
@@ -618,8 +627,10 @@
       const days = j.deadline ? Math.floor((new Date(j.deadline.slice(0, 10) + "T23:59:59Z") - Date.now()) / 86400000) : null;
       const fresh = j.posted && (Date.now() - new Date(j.posted)) / 86400000 <= 3;
       const badges = (j.featured ? '<span class="job-badge featured">Featured</span>' : "") + (fresh ? '<span class="job-badge new">New</span>' : "") + (days !== null ? `<span class="job-badge ${days <= 5 ? "urgent" : ""}">Closes ${days <= 0 ? "today" : "in " + days + " day" + (days === 1 ? "" : "s")}</span>` : "");
-      const meta = [esc(j.source), j.posted ? "Posted " + fmt(j.posted) : ""].filter(Boolean).join(" · ");
-      return `<article class="job-item"><a class="job-link" href="${esc(j.url)}" target="_blank" rel="noopener nofollow" data-title="${esc(j.title)}">${esc(j.title)}</a><p class="job-org">${esc(j.company)}${j.company && j.location ? " · " : ""}${esc(j.location)}</p><p class="job-meta">${meta}${badges}</p></article>`;
+      const details = [j.contract, j.work_type, j.salary].filter(Boolean).join(" · ");
+      const meta = [esc(j.source), j.posted ? "Posted " + fmt(j.posted) : "", esc(details)].filter(Boolean).join(" · ");
+      const href = j.slug ? "/job/" + j.slug : j.url;
+      return `<article class="job-item"><a class="job-link" href="${esc(href)}" data-title="${esc(j.title)}">${esc(j.title)}</a><p class="job-org">${esc(j.company)}${j.company && j.location ? " · " : ""}${esc(j.location)}</p><p class="job-meta">${meta}${badges}</p></article>`;
     };
     const empty = { latest: "Postings appear here as the beta collects them.", featured: "Featured vacancies are postings that matched members' verified CVs strongly. None yet this week.", closing_soon: "No listed postings close in the next two weeks." };
     let data = null;

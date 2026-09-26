@@ -6,8 +6,10 @@ Nothing about who collected a posting, how it scored for anyone, or what
 anyone did with it is exposed. Postings from mailboxes and manual entries
 are never listed. Results are cached for ten minutes."""
 
+import hashlib
 import html
 import json
+import re
 import time
 from datetime import datetime, timezone, timedelta
 from .db import Record
@@ -22,6 +24,76 @@ SECTORS = {
     "mel": ("MEL, research and evaluation jobs", ["mel", "meal", "monitoring", "evaluation", "research", "learning", "assessment", "survey"]),
     "development": ("Development and humanitarian jobs", ["programme", "program", "humanitarian", "development", "consult", "officer", "coordinator", "manager", "director", "advisor"]),
 }
+
+
+AFRICA = ("ethiopia", "addis", "kenya", "nairobi", "uganda", "tanzania", "rwanda", "somalia", "sudan", "south sudan", "djibouti", "eritrea", "nigeria", "ghana", "senegal", "mali", "niger", "chad", "cameroon", "congo", "malawi", "zambia", "zimbabwe", "mozambique", "madagascar", "south africa", "botswana", "namibia", "angola", "burkina", "benin", "togo", "liberia", "sierra leone", "guinea", "gambia", "ivoire", "ivory coast", "egypt", "morocco", "tunisia", "algeria", "libya", "burundi", "central african", "africa", "sahel", "lesotho", "eswatini", "mauritania", "gabon", "seychelles", "mauritius", "comoros", "cabo verde", "cape verde", "sao tome", "equatorial guinea")
+
+
+def slugify(text):
+    s = re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-")
+    return s[:60].rstrip("-") or "role"
+
+
+def job_slug(title, url):
+    return slugify(title) + "-" + hashlib.sha1((url or title).encode()).hexdigest()[:6]
+
+
+def location_class(location):
+    t = str(location or "").lower()
+    if "remote" in t or "home-based" in t or "home based" in t:
+        return "remote"
+    if "ethiopia" in t or "addis" in t:
+        return "ethiopia"
+    if any(c in t for c in AFRICA):
+        return "africa"
+    return "other" if t and t != "not specified" else "other"
+
+
+_SALARY = re.compile(r"(?:(?:USD|US\$|\$|EUR|€|GBP|£|ETB|Birr|KES|CHF)\s?[0-9][0-9,\.]{2,}(?:\s?(?:-|to|–)\s?(?:USD|US\$|\$|ETB|Birr)?\s?[0-9][0-9,\.]{2,})?(?:\s?(?:per|/|a)\s?(?:month|year|annum|day|hour))?|[0-9][0-9,\.]{2,}\s?(?:USD|ETB|Birr|EUR|GBP|KES)(?:\s?(?:per|/|a)\s?(?:month|year|annum|day|hour))?)", re.I)
+_CONTRACT = [
+    ("Internship", r"\bintern(ship)?\b"),
+    ("Volunteer", r"\bvolunteer\b"),
+    ("Consultancy", r"\bconsultan(t|cy)\b|\bcall for proposals\b|\bexpression of interest\b"),
+    ("Fellowship", r"\bfellow(ship)?\b"),
+    ("Part-time", r"\bpart[- ]time\b"),
+    ("Fixed-term", r"\bfixed[- ]term\b|\b(\d{1,2})[- ]months?\b(?! ago)"),
+    ("Full-time", r"\bfull[- ]time\b|\bpermanent\b"),
+]
+
+
+def extract_details(title, description, location=""):
+    """Salary, contract type and work arrangement when the posting states them."""
+    text = " ".join(str(description or "").split())
+    head = (str(title or "") + " " + str(location or "") + " " + text[:4000])
+    salary = None
+    m = _SALARY.search(text)
+    if m:
+        salary = " ".join(m.group(0).split())[:60]
+    contract = next((label for label, pat in _CONTRACT if re.search(pat, head, re.I)), None)
+    work = None
+    low = head.lower()
+    if "hybrid" in low:
+        work = "Hybrid"
+    elif re.search(r"\bremote\b|home[- ]based|work from home", low):
+        work = "Remote"
+    elif re.search(r"\bon[- ]site\b|\bin[- ]person\b", low):
+        work = "On-site"
+    return salary, contract, work
+
+
+def ago(stamp):
+    d = _parse(stamp)
+    if not d:
+        return ""
+    delta = datetime.now(timezone.utc) - d
+    if delta.days <= 0:
+        hours = max(1, int(delta.total_seconds() // 3600))
+        return f"{hours}h ago" if hours < 24 else "1 day ago"
+    if delta.days == 1:
+        return "1 day ago"
+    if delta.days < 30:
+        return f"{delta.days} days ago"
+    return d.strftime("%d %b")
 
 
 def sector_of(title):
@@ -50,8 +122,15 @@ def _parse(stamp):
 
 def _public(job, posted, featured=False):
     description = " ".join((job.get("description") or "").split())
+    salary, contract, work = extract_details(job.get("title"), job.get("description"), job.get("location"))
     return {
         "featured": featured,
+        "slug": job_slug(job.get("title") or "", job.get("url") or ""),
+        "org_slug": slugify(job.get("company") or "unknown"),
+        "location_class": location_class(job.get("location")),
+        "salary": salary,
+        "contract": contract,
+        "work_type": work,
         "title": job.get("title") or "",
         "company": job.get("company") or "",
         "location": job.get("location") or "Not specified",
@@ -60,6 +139,8 @@ def _public(job, posted, featured=False):
         "deadline": (job.get("deadline") or None),
         "url": job.get("url") or "",
         "excerpt": description[:220] + ("…" if len(description) > 220 else ""),
+        # Longer text for the job page: full description for employer submissions, a summary otherwise.
+        "body": (job.get("description") or "") if featured else (description[:700] + ("…" if len(description) > 700 else "")),
     }
 
 
@@ -112,13 +193,34 @@ def compute(db):
         "featured": [e["job"] for e in featured[:6]],
         "closing_soon": [e["job"] for e in closing[:8]],
         "sectors": {slug: sum(1 for e in entries if slug in e["job"]["sectors"]) for slug in SECTORS},
-        # Server-side only (sector pages, sitemap); the public API strips it.
-        "_all": [e["job"] for e in latest[:200]],
+        # Server-side only (job pages, directory, sitemap); the public API strips it.
+        "_all": [e["job"] for e in latest[:300]],
+        "_by_slug": {e["job"]["slug"]: e["job"] for e in latest[:300]},
+        "_orgs": organisations([e["job"] for e in latest[:300]]),
     }
 
 
+def organisations(jobs):
+    groups = {}
+    for j in jobs:
+        if not j.get("company"):
+            continue
+        g = groups.setdefault(j["org_slug"], {"slug": j["org_slug"], "name": j["company"], "count": 0, "locations": [], "sectors": set()})
+        g["count"] += 1
+        if j["location"] and j["location"] != "Not specified" and j["location"] not in g["locations"]:
+            g["locations"].append(j["location"][:40])
+        g["sectors"].update(j.get("sectors", []))
+    out = []
+    for g in groups.values():
+        g["sectors"] = sorted(g["sectors"])
+        g["locations"] = g["locations"][:4]
+        out.append(g)
+    return sorted(out, key=lambda g: (-g["count"], g["name"].lower()))
+
+
 def public_view(data):
-    return {k: v for k, v in data.items() if not k.startswith("_")}
+    strip = ("body",)
+    return {k: ([{kk: vv for kk, vv in j.items() if kk not in strip} for j in v] if isinstance(v, list) else v) for k, v in data.items() if not k.startswith("_")}
 
 
 def listings(db, max_age=600):
@@ -155,12 +257,15 @@ def render_cards(jobs):
         fresh = posted and (datetime.now(timezone.utc) - posted).days <= 3
         if j.get("featured"):
             badge = '<span class="job-badge featured">Featured</span>' + badge
-        meta = " · ".join(x for x in (html.escape(j.get("source") or ""), ("Posted " + posted.strftime("%d %b")) if posted else "") if x)
+        when = ago(j.get("posted"))
+        details = " · ".join(x for x in (j.get("contract"), j.get("work_type"), j.get("salary")) if x)
+        meta = " · ".join(x for x in (html.escape(j.get("source") or ""), ("Posted " + when) if when else "", html.escape(details)) if x)
         new_badge = '<span class="job-badge new">New</span>' if fresh else ""
         sep = " · " if j["company"] and j["location"] else ""
+        href = "/job/" + j["slug"] if j.get("slug") else j["url"]
         out.append(
             '<article class="job-item">'
-            f'<a class="job-link" href="{html.escape(j["url"])}" target="_blank" rel="noopener nofollow" data-title="{html.escape(j["title"])}">{html.escape(j["title"])}</a>'
+            f'<a class="job-link" href="{html.escape(href)}" data-title="{html.escape(j["title"])}">{html.escape(j["title"])}</a>'
             f'<p class="job-org">{html.escape(j["company"])}{sep}{html.escape(j["location"])}</p>'
             f'<p class="job-meta">{meta}{new_badge}{badge}</p>'
             "</article>"
@@ -183,6 +288,13 @@ def json_ld(jobs, site):
         }
         if j.get("deadline"):
             posting["validThrough"] = j["deadline"][:10]
+        if j.get("slug"):
+            posting["url"] = settings.public_url.rstrip("/") + "/job/" + j["slug"]
+            posting["applicationContact"] = {"@type": "ContactPoint", "url": j["url"]}
+        if j.get("work_type") == "Remote":
+            posting["jobLocationType"] = "TELECOMMUTE"
+        if j.get("contract"):
+            posting["employmentType"] = {"Full-time": "FULL_TIME", "Part-time": "PART_TIME", "Internship": "INTERN", "Volunteer": "VOLUNTEER", "Consultancy": "CONTRACTOR", "Fixed-term": "TEMPORARY", "Fellowship": "OTHER"}.get(j["contract"], "OTHER")
         items.append({"@type": "ListItem", "position": i, "item": posting})
     data = {"@context": "https://schema.org", "@type": "ItemList", "name": "Latest jobs on Jobs Find AI", "url": site, "itemListElement": items}
     return '<script type="application/ld+json">' + json.dumps(data, ensure_ascii=False).replace("</", "<\\/") + "</script>"

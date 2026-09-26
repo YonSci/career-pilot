@@ -55,6 +55,7 @@ from . import public_jobs
 from . import billing
 from . import growth
 from . import channel
+from . import public_site
 from .ai import server_key_usage
 
 
@@ -339,9 +340,46 @@ def institution_enquiry(body: Enquiry, request: Request, db=Depends(db_session))
 
 
 @app.get("/jobs", include_in_schema=False)
+def jobs_index_page(request: Request, db=Depends(db_session)):
+    return HTMLResponse(public_site.jobs_index(public_jobs.listings(db), dict(request.query_params)))
+
+
 @app.get("/jobs/{sector}", include_in_schema=False)
-def sector_jobs_page(sector: str | None = None, db=Depends(db_session)):
-    page = public_jobs.sector_page(public_jobs.listings(db), sector)
+def sector_jobs_page(sector: str, request: Request, db=Depends(db_session)):
+    if sector not in public_jobs.SECTORS:
+        raise HTTPException(404, "Not found")
+    return HTMLResponse(public_site.jobs_index(public_jobs.listings(db), {**dict(request.query_params), "sector": sector}))
+
+
+@app.get("/job/{slug}", include_in_schema=False)
+def job_detail_page(slug: str, db=Depends(db_session)):
+    page = public_site.job_page(public_jobs.listings(db), slug)
+    if page is None:
+        raise HTTPException(404, "This posting is no longer listed.")
+    return HTMLResponse(page)
+
+
+@app.get("/organisations", include_in_schema=False)
+def organisations_page(db=Depends(db_session)):
+    return HTMLResponse(public_site.org_index(public_jobs.listings(db)))
+
+
+@app.get("/organisations/{slug}", include_in_schema=False)
+def organisation_page(slug: str, db=Depends(db_session)):
+    page = public_site.org_page(public_jobs.listings(db), slug)
+    if page is None:
+        raise HTTPException(404, "Not found")
+    return HTMLResponse(page)
+
+
+@app.get("/guide", include_in_schema=False)
+def guide_index_page():
+    return HTMLResponse(public_site.guide_index())
+
+
+@app.get("/guide/{slug}", include_in_schema=False)
+def guide_article_page(slug: str):
+    page = public_site.guide_page(slug)
     if page is None:
         raise HTTPException(404, "Not found")
     return HTMLResponse(page)
@@ -349,7 +387,7 @@ def sector_jobs_page(sector: str | None = None, db=Depends(db_session)):
 
 @app.get("/sitemap.xml", include_in_schema=False)
 def sitemap_xml(db=Depends(db_session)):
-    return RawResponse(public_jobs.sitemap(public_jobs.listings(db)), media_type="application/xml")
+    return RawResponse(public_site.sitemap(public_jobs.listings(db)), media_type="application/xml")
 
 
 @app.get("/robots.txt", include_in_schema=False)
@@ -521,6 +559,7 @@ def landing_page(db=Depends(db_session)):
         channel_url = "https://t.me/" + _hc.escape(channel_id[1:], quote=True)
         page = page.replace("<!--CHANNEL-->", f'<a class="btn btn-ghost" href="{channel_url}" target="_blank" rel="noopener" data-track="channel_link_clicked">Daily roles on Telegram</a>', 1)
         page = page.replace("<!--CHANNEL-FOOT-->", f'<a href="{channel_url}" target="_blank" rel="noopener" data-track="channel_link_clicked">Telegram channel</a>', 1)
+        page = page.replace("<!--CHANNEL-BANNER-->", public_site.channel_banner(), 1)
     page = page.replace("<!--JOBS-->", public_jobs.render_cards(data["latest"]), 1)
     page = page.replace("<!--JOBS-JSONLD-->", public_jobs.json_ld(data["latest"], settings.public_url.rstrip("/") + "/#jobs"), 1)
     quotes = growth.testimonials(db)
