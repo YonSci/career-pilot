@@ -53,6 +53,8 @@ services:
       # --- Promotion. Public Telegram channel the bot posts to; the bot must be an administrator of it.
       - key: TELEGRAM_CHANNEL_ID
         sync: false          # e.g. @jobsfindai
+      - key: GOOGLE_SITE_VERIFICATION
+        sync: false          # content value of Search Console's google-site-verification meta tag
       - key: TELEGRAM_CHANNEL_DAILY_HOUR
         value: "7"           # UTC hour of the daily post; the weekly digest goes out on Mondays
       - key: APP_NAME

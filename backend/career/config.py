@@ -105,6 +105,8 @@ class Settings(BaseSettings):
     telegram_channel_daily_hour: int = 7
     # Personal invitation links each member can share.
     referral_invites: int = 3
+    # Google Search Console: the content value of the google-site-verification meta tag.
+    google_site_verification: str = ""
 
     @property
     def public_https(self) -> bool:

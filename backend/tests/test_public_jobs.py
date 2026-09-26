@@ -71,3 +71,14 @@ def test_landing_page_without_landing_dir_is_404(client, monkeypatch):
     from career import main as m
     m._landing_cache.update(at=0.0, html=None)
     assert TestClient(app).get("/").status_code == 404
+
+
+def test_search_console_tag_is_injected_when_configured(client, monkeypatch):
+    monkeypatch.setattr(settings, "landing_dir", pathlib.Path(__file__).resolve().parents[2] / "landing")
+    from career import main as m
+    m._landing_cache.update(at=0.0, html=None)
+    assert "google-site-verification" not in TestClient(app).get("/").text
+    monkeypatch.setattr(settings, "google_site_verification", 'abc"123')
+    m._landing_cache.update(at=0.0, html=None)
+    page = TestClient(app).get("/").text
+    assert '<meta name="google-site-verification" content="abc&quot;123" />' in page and page.index("google-site-verification") < page.index("<body")

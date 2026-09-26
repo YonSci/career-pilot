@@ -500,6 +500,11 @@ def landing_page(db=Depends(db_session)):
         return HTMLResponse(_landing_cache["html"])
     data = public_jobs.listings(db)
     page = index.read_text(encoding="utf-8")
+    if settings.google_site_verification:
+        import html as _h
+
+        tag = '<meta name="google-site-verification" content="' + _h.escape(settings.google_site_verification.strip(), quote=True) + '" />'
+        page = page.replace('<meta charset="utf-8" />', '<meta charset="utf-8" />' + chr(10) + tag, 1)
     page = page.replace("<!--JOBS-->", public_jobs.render_cards(data["latest"]), 1)
     page = page.replace("<!--JOBS-JSONLD-->", public_jobs.json_ld(data["latest"], settings.public_url.rstrip("/") + "/#jobs"), 1)
     quotes = growth.testimonials(db)
