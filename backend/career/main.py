@@ -514,6 +514,13 @@ def landing_page(db=Depends(db_session)):
 
         tag = '<meta name="google-site-verification" content="' + _h.escape(settings.google_site_verification.strip(), quote=True) + '" />'
         page = page.replace('<meta charset="utf-8" />', '<meta charset="utf-8" />' + chr(10) + tag, 1)
+    channel_id = settings.telegram_channel_id.strip()
+    if channel_id.startswith("@"):
+        import html as _hc
+
+        channel_url = "https://t.me/" + _hc.escape(channel_id[1:], quote=True)
+        page = page.replace("<!--CHANNEL-->", f'<a class="btn btn-ghost" href="{channel_url}" target="_blank" rel="noopener" data-track="channel_link_clicked">Daily roles on Telegram</a>', 1)
+        page = page.replace("<!--CHANNEL-FOOT-->", f'<a href="{channel_url}" target="_blank" rel="noopener" data-track="channel_link_clicked">Telegram channel</a>', 1)
     page = page.replace("<!--JOBS-->", public_jobs.render_cards(data["latest"]), 1)
     page = page.replace("<!--JOBS-JSONLD-->", public_jobs.json_ld(data["latest"], settings.public_url.rstrip("/") + "/#jobs"), 1)
     quotes = growth.testimonials(db)

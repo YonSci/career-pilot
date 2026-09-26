@@ -134,6 +134,7 @@
   .job-badge.featured { background: var(--green); color: #fff; }
   .jobs-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 22px; font-size: 0.86rem; color: var(--muted); }
   .jobs-empty { color: var(--muted); font-size: 0.92rem; grid-column: 1 / -1; }
+  .jobs-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   @media (max-width: 900px) { .job-list { grid-template-columns: repeat(2, 1fr); } }
   .jobs-tabs .short { display: none; }
   @media (max-width: 560px) { .job-list { grid-template-columns: 1fr; } .jobs-tabs { width: 100%; justify-content: space-between; } .jobs-tabs button { padding: 8px 10px; font-size: 0.82rem; white-space: nowrap; flex: 1; } .jobs-tabs .full { display: none; } .jobs-tabs .short { display: inline; } }
@@ -360,7 +361,7 @@
   <div class="job-list" id="job-list"><!--JOBS--></div>
   <div class="jobs-foot">
     <span id="jobs-updated">Public postings only, refreshed every ten minutes. Browse by field: <a href="/jobs/data-science">Data &amp; AI</a> · <a href="/jobs/climate">Climate</a> · <a href="/jobs/gis-remote-sensing">GIS</a> · <a href="/jobs/agriculture">Agriculture</a> · <a href="/jobs/mel">MEL</a> · <a href="/jobs/development">Development</a> · <a href="/jobs">All</a></span>
-    <a class="btn btn-primary" href="#invite">Get matched to these roles</a>
+    <span class="jobs-actions"><!--CHANNEL--><a class="btn btn-primary" href="#invite">Get matched to these roles</a></span>
   </div>
 </section>
 
@@ -542,7 +543,7 @@
 <footer>
   <div class="wrap">
     <span>© <span id="year"></span> Jobs Find AI · A personal approach to your next role.</span>
-    <span><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/app/">Sign in</a></span>
+    <span><!--CHANNEL-FOOT--><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/app/">Sign in</a></span>
   </div>
 </footer>
 
@@ -662,6 +663,7 @@
     });
   };
   wireForm("employer-form", "/api/employers/post", "employer_post_submitted");
+  document.querySelectorAll("[data-track]").forEach((el) => el.addEventListener("click", () => track(el.dataset.track, { location: el.closest("footer") ? "footer" : "jobs" })));
   wireForm("institution-form", "/api/institutions/enquiry", "institution_enquiry_submitted");
 
   // Live totals

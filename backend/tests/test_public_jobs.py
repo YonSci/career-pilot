@@ -82,3 +82,14 @@ def test_search_console_tag_is_injected_when_configured(client, monkeypatch):
     m._landing_cache.update(at=0.0, html=None)
     page = TestClient(app).get("/").text
     assert '<meta name="google-site-verification" content="abc&quot;123" />' in page and page.index("google-site-verification") < page.index("<body")
+
+
+def test_channel_link_appears_when_a_public_channel_is_configured(client, monkeypatch):
+    monkeypatch.setattr(settings, "landing_dir", pathlib.Path(__file__).resolve().parents[2] / "landing")
+    from career import main as m
+    m._landing_cache.update(at=0.0, html=None)
+    assert "t.me/" not in TestClient(app).get("/").text
+    monkeypatch.setattr(settings, "telegram_channel_id", "@jobs_find_ai_alerts")
+    m._landing_cache.update(at=0.0, html=None)
+    page = TestClient(app).get("/").text
+    assert page.count('href="https://t.me/jobs_find_ai_alerts"') == 2 and "Daily roles on Telegram" in page and "<!--CHANNEL-->" not in page
