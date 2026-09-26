@@ -784,9 +784,14 @@ export default function Home() {
     act("push-on", async () => {
       const key = setup?.vapid_public_key;
       if (!key) throw new Error("Push notifications are not configured on this server yet.");
-      const reg = await navigator.serviceWorker.ready;
+      if (Notification.permission === "denied") {
+        throw new Error("Notifications are blocked for this site. Click the lock icon next to the address, open Site settings, set Notifications to Allow, then reload and try again.");
+      }
+      // Ask first, inside the click, so the browser treats it as a user gesture.
       const permission = await Notification.requestPermission();
-      if (permission !== "granted") throw new Error("Notifications were not allowed in the browser.");
+      if (permission === "denied") throw new Error("You blocked notifications. To undo: lock icon next to the address → Site settings → Notifications → Allow, then reload.");
+      if (permission !== "granted") throw new Error("The browser closed the permission prompt without an answer. Click the bell or lock icon next to the address to allow notifications, then try again.");
+      const reg = await navigator.serviceWorker.ready;
       const raw = atob(key.replace(/-/g, "+").replace(/_/g, "/").padEnd(key.length + ((4 - (key.length % 4)) % 4), "="));
       const appKey = Uint8Array.from(raw, (c) => c.charCodeAt(0));
       const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: appKey });
@@ -2027,9 +2032,14 @@ export default function Home() {
                         Turn off push on this device
                       </button>
                     ) : pushState === "off" ? (
-                      <button className="button primary" disabled={!!busy || !setup?.vapid_public_key} onClick={enablePush}>
-                        Enable push notifications
-                      </button>
+                      <>
+                        <button className="button primary" disabled={!!busy || !setup?.vapid_public_key} onClick={enablePush}>
+                          Enable push notifications
+                        </button>
+                        {typeof Notification !== "undefined" && Notification.permission === "denied" && (
+                          <span className="field-help">Notifications are blocked for this site in the browser. Lock icon next to the address → Site settings → Notifications → Allow, then reload.</span>
+                        )}
+                      </>
                     ) : pushState === "unsupported" ? (
                       <span className="field-help">This browser cannot receive push notifications. Telegram and email alerts still work.</span>
                     ) : null}
