@@ -125,3 +125,12 @@ Purchases are system records; applying one is idempotent; a month stacks on a ru
 **Telegram channel.** Create a public channel, add the bot as an administrator, set `TELEGRAM_CHANNEL_ID` (for example `@jobsfindai`). The bot posts new field-relevant roles daily at `TELEGRAM_CHANNEL_DAILY_HOUR` UTC and a closing-soon digest on Mondays, each linking to the public listings with UTM tags. The Cohort tab has "post now" buttons.
 
 **Search traffic.** `/jobs` and `/jobs/<sector>` (data-science, climate, gis-remote-sensing, agriculture, mel, development) are server-rendered, indexable pages with JobPosting structured data; `/sitemap.xml` and `/robots.txt` are served by the app.
+
+
+## Public site and installable app (version 0.4.1)
+
+**Public pages**, all server-rendered from the public listings and refreshed every ten minutes: `/jobs` (search box, field, location, employer and closing-date filters, 24 per page), `/jobs/<sector>`, `/job/<slug>` (one page per posting with key facts, salary and contract when stated, apply link, share buttons for Telegram, WhatsApp, LinkedIn and email, similar roles, JobPosting structured data), `/organisations` and `/organisations/<slug>`, `/guide` and `/guide/<slug>` (five articles in `career/guide.py`). The Telegram digest links to `/job/<slug>` so channel readers land on the site. `/sitemap.xml` lists everything.
+
+**Installable app.** `public/manifest.webmanifest`, `public/sw.js` and `public/icons/` ship with the dashboard build under `/app/`. The service worker caches only static assets and the app shell; API calls are never cached. Members see "Install app" under Account (Chrome and Edge prompt; iPhone uses Share → Add to Home Screen).
+
+**Push notifications.** Generate a key pair once with `python deployment/vapid_keys.py` and set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (a `mailto:` address). Members enable push per device under Account; subscriptions are stored encrypted with the member's other secrets (up to five devices). "push" is then an alert channel like Telegram and email, with a test button under Preferences. Subscriptions the push service reports as gone (404/410) are dropped automatically.

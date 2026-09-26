@@ -126,7 +126,7 @@ def jobs_index(data, params):
         title = pj.SECTORS[sector][0]
     if org in orgs:
         title = f"Open roles at {orgs[org]}"
-    description = f"{len(jobs)} open postings, collected from ReliefWeb and employer boards and refreshed every ten minutes. Filter by field, location, employer and closing date."
+    description = f"{len(jobs)} open posting{'s' if len(jobs) != 1 else ''}, collected from ReliefWeb and employer boards and refreshed every ten minutes. Filter by field, location, employer and closing date."
     body = f"<h1>{html.escape(title)}</h1><p class=\"lead\">{html.escape(description)}</p>{form}<p class=\"count\">{len(jobs)} posting{'s' if len(jobs) != 1 else ''}{' · ' + str(data['listed_last_7_days']) + ' new this week' if not keep else ''}</p><div class=\"job-list\">{pj.render_cards(chunk)}</div>{pager}"
     return shell(title, description, body, "/jobs" + ("?" + urlencode(keep) if keep else ""), extra_head=pj.json_ld(chunk, site() + "/jobs"))
 

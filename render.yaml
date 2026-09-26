@@ -53,6 +53,12 @@ services:
       # --- Promotion. Public Telegram channel the bot posts to; the bot must be an administrator of it.
       - key: TELEGRAM_CHANNEL_ID
         sync: false          # e.g. @jobsfindai
+      - key: VAPID_PUBLIC_KEY
+        sync: false          # web push (installable app): python deployment/vapid_keys.py prints the pair
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false          # mailto:you@example.org
       - key: GOOGLE_SITE_VERIFICATION
         sync: false          # content value of Search Console's google-site-verification meta tag
       - key: TELEGRAM_CHANNEL_DAILY_HOUR

@@ -120,8 +120,17 @@ def _parse(stamp):
         return None
 
 
+_MARKUP = re.compile(r"\*\*|__|(?<!\w)[*_](?=\S)|(?<=\S)[*_](?!\w)|(?:^|(?<=\s))#{1,6}\s*|<[^>]+>", re.M)
+
+
+def plain_text(text):
+    """Posting text without markdown emphasis, headings or stray tags."""
+    text = _MARKUP.sub("", str(text or ""))
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _public(job, posted, featured=False):
-    description = " ".join((job.get("description") or "").split())
+    description = plain_text(job.get("description"))
     salary, contract, work = extract_details(job.get("title"), job.get("description"), job.get("location"))
     return {
         "featured": featured,

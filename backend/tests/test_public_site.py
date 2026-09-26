@@ -106,3 +106,7 @@ def test_landing_banner_and_guide_links(client, monkeypatch):
     m._landing_cache.update(at=0.0, html=None)
     page = TestClient(app).get("/").text
     assert 'class="banner"' in page and "Join on Telegram" in page and "<!--CHANNEL-BANNER-->" not in page and 'href="/guide"' in page and 'href="/jobs"' in page
+
+
+def test_markdown_is_stripped_from_public_text():
+    assert public_jobs.plain_text("Contract type: Job **What we're looking for** _now_ ## Heading <br> plain") == "Contract type: Job What we're looking for now Heading plain"
