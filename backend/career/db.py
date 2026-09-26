@@ -57,6 +57,7 @@ class User(Base):
             "last_active": self.last_active,
             "has_openai_key": bool((self.secrets or {}).get("openai_key")),
             "has_imap": bool((self.secrets or {}).get("imap")),
+            "has_push": bool((self.secrets or {}).get("push")),
             "sponsored": bool((self.settings or {}).get("sponsored")),
             "organisation": (self.settings or {}).get("organisation") or "",
         }
@@ -167,6 +168,7 @@ def user_snapshot(user: User):
         "plan": user.plan,
         "openai_key": unseal(secrets.get("openai_key")) or "",
         "imap": unseal(secrets.get("imap")) or None,
+        "push": unseal(secrets.get("push")) or [],
         "sponsored": bool((user.settings or {}).get("sponsored")),
         "organisation": (user.settings or {}).get("organisation") or "",
     }

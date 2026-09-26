@@ -1,0 +1,23 @@
+{
+  "name": "Jobs Find AI",
+  "short_name": "Jobs Find AI",
+  "description": "The right jobs find you. Every match, explained.",
+  "id": "/app/",
+  "start_url": "/app/?source=pwa",
+  "scope": "/app/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f6f2",
+  "theme_color": "#2f5d4a",
+  "lang": "en",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/app/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/app/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/app/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Opportunities", "url": "/app/?tab=opportunities", "icons": [{ "src": "/app/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Applications", "url": "/app/?tab=applications", "icons": [{ "src": "/app/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

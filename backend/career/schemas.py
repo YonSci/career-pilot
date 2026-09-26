@@ -36,7 +36,7 @@ class Preferences(BaseModel):
     )
     excluded_keywords: list[str] = Field(default_factory=list)
     min_score: int = Field(default=70, ge=0, le=100)
-    notify_channels: list[Literal["email", "telegram", "whatsapp"]] = Field(
+    notify_channels: list[Literal["email", "telegram", "whatsapp", "push"]] = Field(
         default_factory=list
     )
     alerts_enabled: bool = False

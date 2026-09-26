@@ -95,6 +95,10 @@ async def private_responses(request: Request, call_next):
     return response
 
 
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
 def db_session():
     with Session() as db:
         yield db
@@ -196,6 +200,7 @@ def setup(db=Depends(db_session)):
         "invite_only": settings.invite_only,
         "owner_email_fixed": bool(settings.owner_email),
         "sponsored_seats_left": max(0, settings.sponsored_seats - accounts.sponsored_count(db)) if settings.openai_api_key else 0,
+        "vapid_public_key": settings.vapid_public_key if settings.vapid_private_key else "",
         "analytics": (
             {"provider": "posthog", "key": settings.posthog_key, "host": settings.posthog_host, "replay": settings.posthog_replay}
             if settings.posthog_key
@@ -687,6 +692,42 @@ def remove_openai_key(user: User = Depends(auth), db=Depends(db_session)):
     user.secrets = {k: v for k, v in (user.secrets or {}).items() if k != "openai_key"}
     db.commit()
     return user.public()
+
+
+class PushInput(BaseModel):
+    subscription: dict
+    label: str = Field(default="", max_length=120)
+
+
+class PushRemove(BaseModel):
+    endpoint: str = Field(min_length=8, max_length=2000)
+
+
+@app.put("/api/account/push")
+def push_subscribe(body: PushInput, user: User = Depends(auth), db=Depends(db_session)):
+    """Register this browser or installed app for push alerts (up to five devices)."""
+    if not (settings.vapid_private_key and settings.vapid_public_key):
+        raise HTTPException(409, "Push notifications are not configured on this server.")
+    endpoint = str(body.subscription.get("endpoint") or "")
+    keys = body.subscription.get("keys") or {}
+    if not endpoint.startswith("https://") or not keys.get("p256dh") or not keys.get("auth"):
+        raise HTTPException(422, "Invalid push subscription.")
+    subs = [s for s in (accounts.unseal((user.secrets or {}).get("push")) or []) if s.get("subscription", {}).get("endpoint") != endpoint]
+    subs.append({"subscription": {"endpoint": endpoint, "keys": {"p256dh": keys["p256dh"], "auth": keys["auth"]}}, "label": body.label.strip()[:120], "added": now_iso()})
+    user.secrets = {**(user.secrets or {}), "push": accounts.seal(subs[-5:])}
+    db.commit()
+    prefs = read(db, "preferences", {})
+    if "push" not in prefs.get("notify_channels", []):
+        put(db, "preferences", "preferences", {**prefs, "notify_channels": prefs.get("notify_channels", []) + ["push"]})
+    return {"devices": len(subs[-5:])}
+
+
+@app.delete("/api/account/push")
+def push_unsubscribe(body: PushRemove, user: User = Depends(auth), db=Depends(db_session)):
+    subs = [s for s in (accounts.unseal((user.secrets or {}).get("push")) or []) if s.get("subscription", {}).get("endpoint") != body.endpoint]
+    user.secrets = {**(user.secrets or {}), "push": accounts.seal(subs) if subs else None}
+    db.commit()
+    return {"devices": len(subs)}
 
 
 class ImapInput(BaseModel):
@@ -1275,7 +1316,7 @@ async def resend_alert(id: str, db=Depends(db_session)):
 
 
 @app.post("/api/notify/test/{channel}", dependencies=[Depends(auth)])
-async def notify_test(channel: Literal["email", "telegram", "whatsapp"], db=Depends(db_session)):
+async def notify_test(channel: Literal["email", "telegram", "whatsapp", "push"], db=Depends(db_session)):
     try:
         return await run_in_threadpool(test_alert, db, channel)
     except ValueError as e:

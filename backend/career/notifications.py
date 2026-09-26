@@ -74,6 +74,8 @@ def availability(db=None):
         and all([settings.gmail_client_id, settings.gmail_client_secret, settings.gmail_refresh_token]),
         "gmail_client": is_owner() and bool(settings.gmail_client_id and settings.gmail_client_secret),
         "imap": bool(user.get("imap")),
+        "push": bool(settings.vapid_private_key and settings.vapid_public_key and user.get("push")),
+        "push_available": bool(settings.vapid_private_key and settings.vapid_public_key),
         "reliefweb": bool(settings.reliefweb_appname),
         "public_https": settings.public_https,
     }
@@ -218,6 +220,54 @@ def whatsapp_send(job, match, job_id):
     r.raise_for_status()
 
 
+def push_send(title, body, url, tag="jfa", db=None):
+    """Web push to every device the scoped member subscribed. Dead subscriptions
+    (404/410 from the push service) are dropped."""
+    from pywebpush import webpush, WebPushException
+
+    subs = list((current_user() or {}).get("push") or [])
+    if not subs:
+        raise ValueError("No push subscription.")
+    payload = json.dumps({"title": title[:120], "body": body[:400], "url": url, "tag": tag})
+    keep, sent = [], 0
+    for sub in subs:
+        try:
+            webpush(subscription_info=sub["subscription"], data=payload, vapid_private_key=settings.vapid_private_key, vapid_claims={"sub": settings.vapid_subject or "mailto:" + (settings.email_from or "owner@example.org")}, ttl=86400)
+            keep.append(sub)
+            sent += 1
+        except WebPushException as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status in (404, 410):
+                log.info("Dropping expired push subscription (%s)", status)
+                continue
+            keep.append(sub)
+            log.warning("Push not confirmed: %s", describe_failure(e))
+    if len(keep) != len(subs):
+        _save_push_subscriptions(keep, db)
+    if not sent:
+        raise ValueError("No device accepted the push.")
+
+
+def _save_push_subscriptions(subs, db=None):
+    from .db import Session, User
+    from .auth import seal
+
+    uid = current_user_id()
+    own = db is None
+    db = db or Session()
+    try:
+        user = db.get(User, uid) if uid else None
+        if user:
+            user.secrets = {**(user.secrets or {}), "push": seal(subs) if subs else None}
+            db.commit()
+        snap = current_user()
+        if isinstance(snap, dict):
+            snap["push"] = subs
+    finally:
+        if own:
+            db.close()
+
+
 def send_alert(channel, job, match, job_id, chat_id=""):
     text = alert_text(job, match, job_id)
     if channel == "email":
@@ -226,6 +276,9 @@ def send_alert(channel, job, match, job_id, chat_id=""):
         telegram_send(chat_id, text, job_id)
     elif channel == "whatsapp":
         whatsapp_send(job, match, job_id)
+    elif channel == "push":
+        score = (match or {}).get("score")
+        push_send(f"{score}/100 · {job.get('title', '')}" if score is not None else job.get("title", ""), " · ".join(x for x in (job.get("company"), job.get("location")) if x) or (match or {}).get("summary", ""), job_link(job_id) if dashboard_is_public() else "/app/?job=" + str(job_id), tag="job-" + str(job_id))
 
 
 def claim(db, job_id, channel, extra=None):
@@ -312,6 +365,8 @@ def notify_digest(db, entries, channels):
                 email_send(f"{settings.app_name}: {len(fresh)} new matching jobs", text)
             elif channel == "telegram":
                 telegram_send(chat_id, text)
+            elif channel == "push":
+                push_send(f"{len(fresh)} new matching job{'s' if len(fresh) != 1 else ''}", "; ".join((e[1].get("title") or "")[:60] for e in fresh[:3]), "/app/", tag="digest", db=db)
             status = "accepted"
         except Exception as e:
             log.warning("Digest via %s not confirmed: %s", channel, describe_failure(e))
@@ -334,6 +389,8 @@ def test_alert(db, channel):
     text = alert_text(sample_job, sample_match, "test")
     if channel == "email":
         email_send(f"{settings.app_name} test alert", text)
+    elif channel == "push":
+        push_send(f"Test alert from {settings.app_name}", "If you can read this, push notifications on this device work.", "/app/", tag="test", db=db)
     elif channel == "telegram":
         telegram_send(telegram_chat(db), text)
     elif channel == "whatsapp":

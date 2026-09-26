@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     referral_invites: int = 3
     # Google Search Console: the content value of the google-site-verification meta tag.
     google_site_verification: str = ""
+    # Web push (installable app): VAPID key pair and contact. Generate with deployment/vapid_keys.py.
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = ""
 
     @property
     def public_https(self) -> bool:

@@ -30,6 +30,7 @@ import {
   CreditCard,
   Gift,
   Megaphone,
+  Smartphone,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -162,6 +163,7 @@ type Account = {
   plan: string;
   has_openai_key: boolean;
   has_imap: boolean;
+  has_push?: boolean;
   sponsored?: boolean;
   organisation?: string;
   last_active?: string;
@@ -684,7 +686,7 @@ function Assistant() {
   );
 }
 export default function Home() {
-  const [setup, setSetup] = useState<null | { app_name: string; needs_first_account: boolean; invite_only: boolean; owner_email_fixed?: boolean }>(null);
+  const [setup, setSetup] = useState<null | { app_name: string; needs_first_account: boolean; invite_only: boolean; owner_email_fixed?: boolean; vapid_public_key?: string }>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [s, setS] = useState<State>(initial),
     [tab, setTab] = useState("opportunities"),
@@ -722,7 +724,7 @@ export default function Home() {
   }, []);
   const boot = useCallback(async () => {
     try {
-      const s = await call<{ app_name: string; needs_first_account: boolean; invite_only: boolean; owner_email_fixed?: boolean; analytics?: Analytics }>("/setup");
+      const s = await call<{ app_name: string; needs_first_account: boolean; invite_only: boolean; owner_email_fixed?: boolean; analytics?: Analytics; vapid_public_key?: string }>("/setup");
       setSetup(s);
       startAnalytics(s.analytics ?? null);
     } catch {}
@@ -742,7 +744,68 @@ export default function Home() {
   }, [refresh]);
   useEffect(() => {
     boot();
+    // Installable app: register the service worker (static assets and push only; API calls never cached).
+    try {
+      if ("serviceWorker" in navigator && window.location.pathname.startsWith("/app")) navigator.serviceWorker.register("/app/sw.js").catch(() => {});
+    } catch {}
   }, [boot]);
+  const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void> }) | null>(null);
+  const [installed, setInstalled] = useState(false);
+  useEffect(() => {
+    const onPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as Event & { prompt: () => Promise<void> });
+    };
+    const onInstalled = () => {
+      setInstalled(true);
+      setInstallPrompt(null);
+      track("app_installed");
+    };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    try {
+      if (window.matchMedia("(display-mode: standalone)").matches) setInstalled(true);
+    } catch {}
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+  const [pushState, setPushState] = useState<"unknown" | "unsupported" | "off" | "on">("unknown");
+  useEffect(() => {
+    if (!signedIn) return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      setPushState("unsupported");
+      return;
+    }
+    navigator.serviceWorker.ready.then((reg) => reg.pushManager.getSubscription()).then((sub) => setPushState(sub ? "on" : "off")).catch(() => setPushState("off"));
+  }, [signedIn]);
+  const enablePush = () =>
+    act("push-on", async () => {
+      const key = setup?.vapid_public_key;
+      if (!key) throw new Error("Push notifications are not configured on this server yet.");
+      const reg = await navigator.serviceWorker.ready;
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") throw new Error("Notifications were not allowed in the browser.");
+      const raw = atob(key.replace(/-/g, "+").replace(/_/g, "/").padEnd(key.length + ((4 - (key.length % 4)) % 4), "="));
+      const appKey = Uint8Array.from(raw, (c) => c.charCodeAt(0));
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: appKey });
+      await call("/account/push", "PUT", { subscription: sub.toJSON(), label: navigator.userAgent.slice(0, 100) });
+      setPushState("on");
+      track("push_enabled");
+      await refresh();
+    }, "Push notifications enabled on this device");
+  const disablePush = () =>
+    act("push-off", async () => {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await call("/account/push", "DELETE", { endpoint: sub.endpoint });
+        await sub.unsubscribe();
+      }
+      setPushState("off");
+      await refresh();
+    }, "Push notifications turned off on this device");
   useEffect(() => {
     if (!signedIn) return;
     const t = setInterval(() => refresh().catch((e: Error & { status?: number }) => e.status === 401 && setSignedIn(false)), 8000);
@@ -1755,12 +1818,12 @@ export default function Home() {
                     </div>
                     <Switch aria-label="Enable alerts" checked={prefs.alerts_enabled} onCheckedChange={(v) => setPrefs({ ...prefs, alerts_enabled: v })} />
                   </div>
-                  {["telegram", "email", ...(isAdmin ? ["whatsapp"] : [])].map((c) => (
+                  {["telegram", "email", "push", ...(isAdmin ? ["whatsapp"] : [])].map((c) => (
                     <div className="channel-row" key={c}>
                       <Checkbox aria-label={"Use " + c} checked={prefs.notify_channels.includes(c)} onCheckedChange={(v) => setPrefs({ ...prefs, notify_channels: v ? [...prefs.notify_channels, c] : prefs.notify_channels.filter((x) => x !== c) })} />
-                      <strong>{c === "whatsapp" ? "WhatsApp" : c[0].toUpperCase() + c.slice(1)}</strong>
+                      <strong>{c === "whatsapp" ? "WhatsApp" : c === "push" ? "Push (installed app / browser)" : c[0].toUpperCase() + c.slice(1)}</strong>
                       <span className={"tag " + (s.connections[c] ? "tag-green" : "")}>
-                        {s.connections[c] ? "Ready" : c === "telegram" && s.telegram.bot_configured ? "Link your chat (Account)" : c === "email" ? "Not offered on this server" : "Not configured"}
+                        {s.connections[c] ? "Ready" : c === "telegram" && s.telegram.bot_configured ? "Link your chat (Account)" : c === "email" ? "Not offered on this server" : c === "push" ? (s.connections.push_available ? "Enable under Account" : "Not configured on this server") : "Not configured"}
                       </span>
                       {s.connections[c] && (
                         <button className="text-button" disabled={!!busy} onClick={() => act("test-" + c, () => call("/notify/test/" + c, "POST"), "Test alert sent")}>
@@ -1944,6 +2007,34 @@ export default function Home() {
                       </button>
                     </>
                   )}
+                </section>
+                <section className="panel">
+                  <h2>
+                    <Smartphone size={18} /> On your phone
+                  </h2>
+                  <p className="field-help">
+                    {installed ? "You are using the installed app." : "Install Jobs Find AI on your phone or desktop: it opens like an app and can notify you of matches even when the browser is closed."}
+                  </p>
+                  <div className="button-row">
+                    {installPrompt && !installed && (
+                      <button className="button secondary" onClick={() => installPrompt.prompt().then(() => track("install_prompted")).catch(() => {})}>
+                        Install app
+                      </button>
+                    )}
+                    {!installPrompt && !installed && <span className="field-help">On iPhone: Share → Add to Home Screen. On Android Chrome: menu → Add to Home screen.</span>}
+                    {pushState === "on" ? (
+                      <button className="button secondary" disabled={!!busy} onClick={disablePush}>
+                        Turn off push on this device
+                      </button>
+                    ) : pushState === "off" ? (
+                      <button className="button primary" disabled={!!busy || !setup?.vapid_public_key} onClick={enablePush}>
+                        Enable push notifications
+                      </button>
+                    ) : pushState === "unsupported" ? (
+                      <span className="field-help">This browser cannot receive push notifications. Telegram and email alerts still work.</span>
+                    ) : null}
+                  </div>
+                  {s.user.has_push && <p className="field-help">Push is on for {pushState === "on" ? "this device" : "another device"}. Matches above your threshold arrive as notifications; test it under Preferences.</p>}
                 </section>
                 <section className="panel">
                   <h2>
