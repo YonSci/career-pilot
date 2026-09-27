@@ -61,3 +61,6 @@ client_secret*.json
 /dashboard/
 /data/secrets/
 career-export.db
+
+# Launch video renders (large binaries)
+/brag-output*/
