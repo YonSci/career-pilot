@@ -22,7 +22,7 @@ Application versions include snapshots. Edited drafts never update master profil
 
 1. Extract CV statements and exact supporting source excerpts. Every fact starts unverified.
 2. User corrects and verifies evidence. Only verified facts reach matching and writing.
-3. Collect jobs from configured sources, screen by word stem against keywords (and optionally strictly by location), normalize and deduplicate. Evaluate the most promising unevaluated postings first: title matches, preferred locations, newest.
+3. Collect jobs from configured sources, screen by word stem against keywords (and optionally strictly by location), normalize and deduplicate. Evaluate the most promising unevaluated postings first: title matches, preferred locations, newest. With JEV on (`JEV_MODE`), postings are first scored by JEV (TypeSafe AI) on six weighted dimensions, cached per posting, evidence and preferences; in rank mode the LLM evaluates them in JEV order and skips confident low scores. JEV never produces a match, a requirement check or an alert.
 4. Separate mandatory eligibility (met / not_met / unknown) from relevance score. Unknown evidence is never treated as a known qualification.
 5. Notify only AI-reviewed matches meeting the configured threshold and without known mandatory disqualifiers. Alert content includes gaps/unknowns.
 6. A deliberate Prepare action records approval and queues drafting. No submission API exists.

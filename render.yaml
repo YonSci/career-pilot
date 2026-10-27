@@ -59,6 +59,13 @@ services:
         sync: false
       - key: VAPID_SUBJECT
         sync: false          # mailto:you@example.org
+      # --- JEV (TypeSafe AI) ranks postings before the LLM evaluates them. Inert until the key is set.
+      - key: TYPESAFE_API_KEY
+        sync: false          # TypeSafe dashboard > API keys
+      - key: JEV_MODE
+        value: shadow        # off | shadow (score and store only) | rank (LLM evaluates JEV's shortlist)
+      - key: JEV_ACCOUNTS
+        sync: false          # optional: comma-separated account emails; empty = every account
       - key: GOOGLE_SITE_VERIFICATION
         sync: false          # content value of Search Console's google-site-verification meta tag
       - key: TELEGRAM_CHANNEL_DAILY_HOUR

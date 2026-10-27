@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,9 +21,9 @@ class Settings(BaseSettings):
     sponsored_seats: int = 20
     cors_origins: str = "http://localhost:8000,http://localhost:3000"
     public_url: str = "http://localhost:8000"
-    openai_api_key: str = ""
     # Set by Render on every deploy; /health reports it so a deploy can be matched to a commit.
     render_git_commit: str = ""
+    openai_api_key: str = ""
     extract_model: str = "gpt-5.6-luna"
     match_model: str = "gpt-5.6-terra"
     write_model: str = "gpt-5.6-sol"
@@ -46,6 +47,21 @@ class Settings(BaseSettings):
     match_description_chars: int = 30000
     # Evaluations that keep failing are paused for this many hours after 3 attempts.
     match_retry_hours: int = 24
+    # JEV (TypeSafe AI) ranks postings cheaply before the LLM evaluates them.
+    # "off": unused. "shadow": scored and stored for comparison, LLM order unchanged.
+    # "rank": the LLM evaluates postings in JEV order and skips confident low scores.
+    jev_mode: Literal["off", "shadow", "rank"] = "off"
+    typesafe_api_key: str = ""
+    jev_model: str = "jev-latest"
+    # Postings JEV scores per search; scores are cached per posting, evidence and preferences.
+    jev_max_per_run: int = 300
+    jev_workers: int = 8
+    # Rank mode: a posting scoring below jev_min_score with at least jev_confident
+    # confidence is not sent to the LLM. Uncertain low scores still are.
+    jev_min_score: int = 40
+    jev_confident: float = 0.6
+    # Comma-separated account emails that use JEV; empty means every account.
+    jev_accounts: str = ""
     # Unshortlisted jobs unseen in any feed for this long are archived.
     archive_after_days: int = 45
     dashboard_dir: Path = Path("dashboard")

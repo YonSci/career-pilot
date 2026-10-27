@@ -70,6 +70,7 @@ SQLAlchemy==2.0.53
 starlette==1.6.0
 tenacity==9.1.4
 truststore==0.10.4
+typesafe-sdk==0.7.5
 typing-inspection==0.4.4
 typing_extensions==4.16.0
 tzdata==2026.4

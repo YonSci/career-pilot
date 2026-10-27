@@ -13,6 +13,7 @@ from .schemas import Preferences
 from .sources import collect, clean_url, Context
 from .relevance import screen, priority
 from .ai import match_job, write_package, ai_available
+from .jev import jev_enabled, jev_key, jev_state, score_job
 from .auth import plan_limits
 from .notifications import notify, notify_digest, availability as notify_ready
 from .config import settings
@@ -312,6 +313,68 @@ def evaluation_budget(db=None):
     return budget
 
 
+def score_within(deadline, profile, job, prefs):
+    if datetime.now(timezone.utc) >= deadline:
+        raise OutOfTime()
+    return score_job(profile, job, prefs)
+
+
+def jev_stage(db, run, result, candidates, profile, prefs, deadline):
+    """Score the leading candidates with JEV, reusing cached scores, and store
+    each score on its posting. Shadow mode returns the queue unchanged. Rank
+    mode orders it by JEV score and drops confident low scores; postings JEV
+    could not score follow in keyword order, so an outage changes nothing."""
+    leading = candidates[: settings.jev_max_per_run]
+    keys = {r.id: jev_key(jev_state(profile, r.data, prefs)) for r in leading}
+    todo = [r for r in leading if (r.data.get("jev") or {}).get("key") != keys[r.id]]
+    stats = {"scored": 0, "cached": len(leading) - len(todo), "failed": 0, "held": 0, "tokens": 0}
+    if todo:
+        result["progress"] = f"Ranking {len(todo)} postings"
+        put(db, "run", run.key, result)
+        with ThreadPoolExecutor(max_workers=settings.jev_workers) as pool:
+            futures = {
+                pool.submit(contextvars.copy_context().run, score_within, deadline, profile, row.data, prefs): row
+                for row in todo
+            }
+            for future in as_completed(futures):
+                row = futures[future]
+                try:
+                    scored = future.result()
+                except OutOfTime:
+                    continue
+                except Exception:
+                    log.exception("JEV scoring failed for %s", row.data.get("title"))
+                    stats["failed"] += 1
+                    # Nothing has succeeded yet: the service is down or the key is wrong. Stop early.
+                    if not stats["scored"] and stats["failed"] >= settings.jev_workers:
+                        for pending in futures:
+                            pending.cancel()
+                        break
+                    continue
+                put(db, "job", row.key, {**row.data, "jev": scored})
+                stats["scored"] += 1
+                stats["tokens"] += scored["tokens"]
+    result["jev"] = stats
+    if settings.jev_mode != "rank":
+        return candidates
+
+    def current(row):
+        jev = row.data.get("jev")
+        return jev if jev and row.id in keys and jev.get("key") == keys[row.id] else None
+
+    ranked, unscored = [], []
+    for row in candidates:
+        jev = current(row)
+        if jev is None:
+            unscored.append(row)
+        elif jev["score"] < settings.jev_min_score and jev["confidence"] >= settings.jev_confident and row.data.get("source") != "Manual":
+            stats["held"] += 1
+        else:
+            ranked.append(row)
+    ranked.sort(key=lambda r: -current(r)["score"])
+    return ranked + unscored
+
+
 def _run_scan(run_id):
     with Session() as db:
         run = get_row(db, run_id, "run")
@@ -417,12 +480,15 @@ def _run_scan(run_id):
         ]
         candidates.sort(key=lambda r: priority(r.data))
         budget = evaluation_budget(db)
+        verified_profile = profile if any(f.get("verified") for f in profile.get("facts", [])) else None
+        # JEV runs before the budget is applied, so it chooses from every candidate, not just the first few.
+        if verified_profile and budget and ai_available() and jev_enabled():
+            candidates = jev_stage(db, run, result, candidates, verified_profile, prefs, deadline)
         batch = candidates[:budget]
         if candidates and budget == 0:
             result.setdefault("warnings", []).append(
                 "This month's included AI evaluations are used up. Add your own OpenAI key under Account to continue, or wait for next month."
             )
-        verified_profile = profile if any(f.get("verified") for f in profile.get("facts", [])) else None
         if batch and verified_profile:
             # Model calls run a few at a time; the database is written from this thread only.
             total = len(batch)
@@ -545,6 +611,7 @@ def _run_scan(run_id):
                 "alerts": result["alerts"],
                 "warnings": len(result.get("warnings") or []),
                 "delivered": {k: v for k, v in (result.get("delivered") or {}).items() if k != "inapp"},
+                "jev": result.get("jev"),
             },
             distinct_id=current_user().get("id") if current_user() else "server",
         )
