@@ -50,6 +50,7 @@ Deleting the service or the disk deletes all accounts' data.
 
 - Logs: Render dashboard → Logs. Search failures include the source name; evaluation failures back off automatically.
 - Scheduled searches run inside the web service; the Render health check keeps it alive.
+- `/health` reports the deployed commit (`"commit": "5ff833f"`, from Render's `RENDER_GIT_COMMIT`); compare it with `git log -1 --format=%h origin/main` to confirm a deploy has landed. Outside Render it reads `"local"`.
 - Telegram uses long polling; no webhook is needed. If you ever set a webhook, unset it with `deployment/telegram_setup.py polling`.
 - Per-user secrets are encrypted with `SECRET_KEY`. Changing it makes stored keys unreadable; members would re-enter them.
 

@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:8000,http://localhost:3000"
     public_url: str = "http://localhost:8000"
     openai_api_key: str = ""
+    # Set by Render on every deploy; /health reports it so a deploy can be matched to a commit.
+    render_git_commit: str = ""
     extract_model: str = "gpt-5.6-luna"
     match_model: str = "gpt-5.6-terra"
     write_model: str = "gpt-5.6-sol"

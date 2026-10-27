@@ -68,7 +68,8 @@ def test_auth_required(client):
         client.get("/api/state", headers={"Authorization": "Bearer wrong"}).status_code
         == 401
     )
-    assert client.get("/health").json()["status"] == "ok"
+    health = client.get("/health").json()
+    assert health["status"] == "ok" and health["commit"]
 
 
 def test_import_verify_dedupe_match_and_persistence(client):

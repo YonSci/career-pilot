@@ -188,7 +188,12 @@ def job_summary(row):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": settings.app_name, "version": VERSION}
+    return {
+        "status": "ok",
+        "service": settings.app_name,
+        "version": VERSION,
+        "commit": settings.render_git_commit[:7] or "local",
+    }
 
 
 @app.get("/api/setup")
