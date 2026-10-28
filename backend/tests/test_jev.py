@@ -245,3 +245,25 @@ def test_backfill_rescores_evaluated_postings_after_a_rubric_change(client, monk
     jev_report.main([])
     out = capsys.readouterr().out
     assert "Postings with a current (rubric next) JEV score: 3" in out and "older rubric" not in out
+
+
+def test_jev_scores_are_shown_to_the_owner_only_unless_jev_show_all(client, monkeypatch):
+    from career.db import Session, Record
+    from tests.conftest import signup_member
+
+    member = signup_member(client)
+    job_id = member.post("/api/jobs", json={**JOB, "url": "https://example.org/jobs/member"}).json()["id"]
+    with Session() as db:
+        row = db.query(Record).filter_by(id=job_id).one()
+        row.data = {**row.data, "jev": {"score": 55, "confidence": 0.8, "dimensions": {}}}
+        db.commit()
+
+    def seen():
+        listed = next(j for j in member.get("/api/state").json()["jobs"] if j["id"] == job_id)
+        return "jev" in listed, "jev" in member.get(f"/api/jobs/{job_id}").json()
+
+    assert seen() == (False, False)  # default JEV_SHOW=owner; this is a member
+    monkeypatch.setattr(settings, "jev_show", "all")
+    assert seen() == (True, True)
+    monkeypatch.setattr(settings, "jev_show", "off")
+    assert seen() == (False, False)

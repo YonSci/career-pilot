@@ -43,7 +43,7 @@ from .db import (
 from . import auth as accounts
 from .schemas import Profile, Preferences, JobInput, SourceInput, Package, MATCH_RELEVANT_PREFERENCES
 from .documents import extract_text, package_zip
-from .ai import extract_profile, ai_available, verify_key
+from .ai import extract_profile, ai_available, verify_key, suggest_search
 from .sources import validate_source, collect, Context, SUGGESTED_SOURCES, KIND_LABELS, imap_check
 from .service import ingest, evaluate, expired, prepare_application, run_scan
 from .notifications import availability, test_alert, send_invitation
@@ -173,9 +173,22 @@ def item(row):
     return {"id": row.id, **row.data, "updated": row.updated}
 
 
+def jev_visible():
+    """JEV scores are shown per JEV_SHOW: to everyone, only to the owner (admin), or to no one."""
+    return settings.jev_show == "all" or (settings.jev_show == "owner" and (current_user() or {}).get("role") == "admin")
+
+
+def job_item(row):
+    data = item(row)
+    if not jev_visible():
+        data.pop("jev", None)
+    return data
+
+
 def job_summary(row):
     """List view of a posting: everything except the full description."""
-    data = {k: v for k, v in row.data.items() if k not in ("description", "body_hash", "screen")}
+    hidden = ("description", "body_hash", "screen") + (() if jev_visible() else ("jev",))
+    data = {k: v for k, v in row.data.items() if k not in hidden}
     description = row.data.get("description") or ""
     return {
         "id": row.id,
@@ -991,7 +1004,7 @@ def state(user: User = Depends(auth), db=Depends(db_session)):
 @app.get("/api/jobs/{id}", dependencies=[Depends(auth)])
 def job_detail(id: str, db=Depends(db_session)):
     row = row_or_404(db, id, "job")
-    return {**item(row), "expired": expired(row.data)}
+    return {**job_item(row), "expired": expired(row.data)}
 
 
 @app.post("/api/profile/upload")
@@ -1031,6 +1044,19 @@ def profile_text(body: TextImport, user: User = Depends(auth), db=Depends(db_ses
     put(db, "profile", "profile", profile.model_dump())
     invalidate_matches(db)
     return profile
+
+
+@app.post("/api/preferences/suggest")
+def suggest_preferences(user: User = Depends(auth), db=Depends(db_session)):
+    """Suggest keywords and locations from verified evidence. Nothing is saved."""
+    ai_action(user, "search suggestion")
+    prefs = {**Preferences().model_dump(), **read(db, "preferences", {})}
+    try:
+        return suggest_search(read(db, "profile", {}), prefs)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception:
+        raise HTTPException(502, "Could not suggest a search. Check the AI connection and retry.")
 
 
 def invalidate_matches(db):
@@ -1140,7 +1166,7 @@ def add_job(job: JobInput, db=Depends(db_session)):
         row, created = ingest(db, job.model_dump())
     except ValueError as e:
         raise HTTPException(422, str(e))
-    return {**item(row), "created_new": created}
+    return {**job_item(row), "created_new": created}
 
 
 class Decision(BaseModel):
@@ -1150,7 +1176,7 @@ class Decision(BaseModel):
 @app.put("/api/jobs/{id}/decision", dependencies=[Depends(auth)])
 def decide(id: str, body: Decision, db=Depends(db_session)):
     row = row_or_404(db, id, "job")
-    return item(put(db, "job", row.key, {**row.data, "status": body.status}))
+    return job_item(put(db, "job", row.key, {**row.data, "status": body.status}))
 
 
 @app.post("/api/jobs/{id}/match")
@@ -1160,7 +1186,7 @@ def match(id: str, user: User = Depends(auth), db=Depends(db_session)):
     if not any(f.get("verified") for f in read(db, "profile", {}).get("facts", [])):
         raise HTTPException(409, "Upload and verify your CV evidence first.")
     try:
-        return item(evaluate(db, row))
+        return job_item(evaluate(db, row))
     except ValueError as e:
         raise HTTPException(422, str(e))
     except Exception:

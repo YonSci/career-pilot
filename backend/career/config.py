@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     # Hard monthly cap on JEV input tokens, all accounts together; 0 = no cap. Once
     # reached, postings keep keyword order until next month. Set a matching limit with TypeSafe.
     jev_monthly_tokens: int = 20_000_000
+    # Who sees JEV scores in the dashboard: "owner" (admin only), "all" members, or "off".
+    jev_show: Literal["owner", "all", "off"] = "owner"
     # Comma-separated account emails that use JEV; empty means every account.
     jev_accounts: str = ""
     # Unshortlisted jobs unseen in any feed for this long are archived.

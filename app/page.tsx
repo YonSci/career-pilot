@@ -31,6 +31,7 @@ import {
   Gift,
   Megaphone,
   Smartphone,
+  Sparkles,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -88,7 +89,23 @@ type Job = {
   status: string;
   match: null | Match;
   match_attempts?: number;
+  // Preliminary JEV ranking; present only when the server shows it to this account (JEV_SHOW).
+  jev?: Jev;
 };
+type Jev = {
+  score: number;
+  confidence: number;
+  dimensions: Record<string, { score: number; confidence: number }>;
+  sample?: boolean;
+};
+const JEV_DIMENSIONS: [string, string][] = [
+  ["experience", "Experience"],
+  ["skills", "Technical skills"],
+  ["domain", "Domain"],
+  ["seniority", "Seniority"],
+  ["location", "Location"],
+  ["preferences", "Preferences"],
+];
 type Para = { text: string; evidence_ids: string[] };
 type Doc = { title: string; paragraphs: Para[] };
 type Pack = {
@@ -702,6 +719,7 @@ export default function Home() {
     [cvText, setCvText] = useState(""),
     [profile, setProfile] = useState<Profile>(initial.profile),
     [prefs, setPrefs] = useState(defaults),
+    [suggestion, setSuggestion] = useState<null | { note: string; previous: Prefs }>(null),
     [sourceKind, setSourceKind] = useState("reliefweb"),
     [sourceValue, setSourceValue] = useState(""),
     [sourceTest, setSourceTest] = useState<null | { received: number; sample: { title: string; company: string; location: string; url: string }[] }>(null),
@@ -1026,16 +1044,26 @@ export default function Home() {
   const savePrefs = () =>
     act(
       "preferences",
-      () =>
-        call("/preferences", "PUT", {
+      async () => {
+        await call("/preferences", "PUT", {
           ...prefs,
           keywords: prefs.keywords.filter(Boolean),
           locations: prefs.locations.filter(Boolean),
           contract_types: prefs.contract_types.filter(Boolean),
           excluded_keywords: prefs.excluded_keywords.filter(Boolean),
-        }),
+        });
+        setSuggestion(null);
+      },
       "Preferences saved",
     );
+  // Fills the form from verified evidence; nothing is saved until the member saves.
+  const suggestSearch = () =>
+    act("suggest", async () => {
+      const r = await call<{ keywords: string[]; locations: string[]; note: string }>("/preferences/suggest", "POST");
+      track("search_suggestion_received", { keywords: r.keywords.length, locations: r.locations.length });
+      setSuggestion({ note: r.note, previous: prefs });
+      setPrefs({ ...prefs, keywords: r.keywords.length ? r.keywords : prefs.keywords, locations: r.locations.length ? r.locations : prefs.locations });
+    });
   const addSource = (kind: string, value: string) =>
     act(
       "source",
@@ -1309,6 +1337,11 @@ export default function Home() {
                             <>
                               <strong>{j.match.score}</strong>
                               <small>{j.match.mode === "keyword" ? "KEYWORD" : "MATCH"}</small>
+                            </>
+                          ) : j.jev ? (
+                            <>
+                              <strong>{j.jev.score}</strong>
+                              <small>PRE-RANK</small>
                             </>
                           ) : (
                             <small>{(j.match_attempts ?? 0) >= 3 ? "PAUSED" : "UNRANKED"}</small>
@@ -1778,6 +1811,32 @@ export default function Home() {
             <div className="two-columns">
               <section className="panel">
                 <h2>Search preferences</h2>
+                <div className="suggest-row">
+                  <button className="button secondary" disabled={!!busy || !s.connections.ai || !s.profile.facts.some((f) => f.verified)} onClick={suggestSearch}>
+                    {busy === "suggest" ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />}
+                    Suggest from my CV
+                  </button>
+                  {suggestion && (
+                    <button
+                      className="text-button"
+                      onClick={() => {
+                        setPrefs(suggestion.previous);
+                        setSuggestion(null);
+                      }}
+                    >
+                      Undo
+                    </button>
+                  )}
+                </div>
+                <p className="field-help">
+                  {suggestion
+                    ? suggestion.note + " Suggested from your verified evidence. Review the keywords and locations below, then save."
+                    : !s.connections.ai
+                      ? "Suggestions need AI evaluation: add an OpenAI key under Account."
+                      : !s.profile.facts.some((f) => f.verified)
+                        ? "Verify some CV evidence first to get suggested keywords and locations."
+                        : "Proposes keywords and locations from your verified evidence. Nothing changes until you save."}
+                </p>
                 {(
                   [
                     ["keywords", "Fields and keywords"],
@@ -2715,6 +2774,34 @@ export default function Home() {
                 </button>
               </div>
               {job.expired && <p className="danger-text">The listed deadline has passed.</p>}
+              {job.jev && (
+                <section className="jev-detail">
+                  <div className="panel-heading">
+                    <h3>{job.jev.score}/100 · Preliminary ranking</h3>
+                    <span className="tag">{job.jev.sample ? "Random quality check" : "JEV"}</span>
+                  </div>
+                  <div className="jev-dimensions">
+                    {JEV_DIMENSIONS.map(([key, label]) => {
+                      const d = job.jev?.dimensions[key];
+                      if (!d) return null;
+                      return (
+                        <div className="jev-dimension" key={key}>
+                          <span>{label}</span>
+                          <div className="jev-track" aria-hidden="true">
+                            <div className="jev-fill" style={{ width: `${Math.round(d.score * 100)}%`, opacity: 0.45 + 0.55 * d.confidence }} />
+                          </div>
+                          <strong>{Math.round(d.score * 100)}</strong>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="field-help">
+                    A quick ranking from your verified evidence, used to choose which postings get the detailed evaluation. It is not a hiring
+                    probability, and it does not check individual requirements. Fainter bars are less certain.
+                    {job.jev.sample && " This posting was evaluated in full as part of a random check of postings the ranking scores low."}
+                  </p>
+                </section>
+              )}
               {job.match && (
                 <section className="match-detail">
                   <div className="panel-heading">

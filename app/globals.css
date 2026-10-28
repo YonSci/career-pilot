@@ -1069,6 +1069,49 @@ h1 {
   padding: 22px;
   border-radius: 8px;
 }
+.suggest-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 6px;
+}
+.jev-detail {
+  border: 1px solid #e1e8ee;
+  background: #f7f9fb;
+  padding: 18px 22px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.jev-dimensions {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+.jev-dimension {
+  display: grid;
+  grid-template-columns: 120px 1fr 32px;
+  gap: 12px;
+  align-items: center;
+  font-size: 13px;
+  color: #4f6273;
+}
+.jev-dimension strong {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.jev-track {
+  height: 6px;
+  background: #e6ecf1;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.jev-fill {
+  height: 100%;
+  background: #4b7a99;
+  border-radius: 3px;
+}
 .match-detail > p {
   font-size: 14px;
   color: #658072;

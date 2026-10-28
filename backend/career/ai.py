@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from openai import OpenAI, AuthenticationError, RateLimitError
 from .config import settings
 from .db import current_user, current_user_id
-from .schemas import Profile, Fact, Match, Package, QualityReview
+from .schemas import Profile, Fact, Match, Package, QualityReview, SearchSuggestion
 from . import telemetry
 
 _usage_lock = threading.Lock()
@@ -198,6 +198,31 @@ def job_for_model(job):
         k: (clean_text(job.get(k), 500) if isinstance(job.get(k), str) else job.get(k))
         for k in ("title", "company", "location", "url", "deadline", "posted", "source")
     } | {"description": clean_text(description)}
+
+
+def suggest_search(profile, prefs):
+    """Propose keywords and locations from verified facts. Keywords screen postings
+    out, so they must be broad; each must cite the verified facts it rests on."""
+    evidence = [
+        {"id": f["id"], "category": f.get("category", ""), "text": f["text"]}
+        for f in profile.get("facts", [])
+        if f.get("verified") and (f.get("category") or "").strip().lower() != "contact"
+    ]
+    if not evidence:
+        raise ValueError("Verify some CV evidence first.")
+    s = structured(
+        settings.extract_model,
+        SearchSuggestion,
+        "Propose a job search for this candidate from their VERIFIED facts only. keywords: 5 to 10 short phrases (1 to 3 words) naming fields, job roles and specialisms the facts show they are qualified for, for example 'data science', 'hydrology', 'GIS'. Postings that contain none of the keywords are discarded, so prefer broad, common terms over rare ones, and avoid generic words like 'manager' or 'analysis' on their own. Every keyword cites the evidence_ids of the facts that support it. locations: countries or cities the facts show the candidate works in, plus 'Remote' when their work suits remote roles. Do not invent qualifications or locations. note: one sentence on what the search targets. current_preferences shows what the candidate has now; improve on it rather than repeating it.",
+        {"facts": evidence, "current_preferences": {k: prefs.get(k) for k in ("keywords", "locations")}},
+    )
+    ids = {f["id"] for f in evidence}
+    keywords = []
+    for k in s.keywords:
+        term = k.term.strip()
+        if term and term.lower() not in {t.lower() for t in keywords} and any(i in ids for i in k.evidence_ids):
+            keywords.append(term)
+    return {"keywords": keywords, "locations": [l.strip() for l in s.locations if l.strip()], "note": s.note}
 
 
 def match_job(profile, job, prefs):

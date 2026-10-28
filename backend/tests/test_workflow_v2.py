@@ -215,3 +215,34 @@ def test_rejected_key_stops_the_search_with_one_warning(client, monkeypatch):
     assert not any("could not be evaluated" in w for w in warnings)
     # Not the postings' fault: no attempts recorded, so no backoff once the key is replaced.
     assert all(not j.get("match_attempts") for j in state["jobs"])
+
+
+def test_search_suggestion_keeps_only_terms_backed_by_verified_facts(client, monkeypatch):
+    from career import ai
+    from career.schemas import SearchSuggestion, SuggestedTerm
+
+    assert client.post("/api/preferences/suggest").status_code == 422  # no verified evidence yet
+    profile = verified_profile(client)
+    fact = profile["facts"][0]["id"]
+    seen = {}
+
+    def fake(model, schema, instructions, data, **kw):
+        seen["data"] = data
+        return SearchSuggestion(
+            keywords=[
+                SuggestedTerm(term="climate data", evidence_ids=[fact]),
+                SuggestedTerm(term="Climate Data", evidence_ids=[fact]),  # duplicate
+                SuggestedTerm(term="astrophysics", evidence_ids=["F999"]),  # no such fact
+                SuggestedTerm(term="python", evidence_ids=[]),  # no evidence
+            ],
+            locations=["Ethiopia", " Remote ", ""],
+            note="Climate data roles in Ethiopia or remote.",
+        )
+
+    monkeypatch.setattr(ai, "structured", fake)
+    before = client.get("/api/state").json()["preferences"]
+    r = client.post("/api/preferences/suggest")
+    assert r.status_code == 200
+    assert r.json() == {"keywords": ["climate data"], "locations": ["Ethiopia", "Remote"], "note": "Climate data roles in Ethiopia or remote."}
+    assert all(f["category"].lower() != "contact" for f in seen["data"]["facts"])
+    assert client.get("/api/state").json()["preferences"] == before  # nothing saved

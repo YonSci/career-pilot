@@ -16,6 +16,18 @@ class Profile(BaseModel):
     facts: list[Fact] = Field(default_factory=list, max_length=300)
 
 
+class SuggestedTerm(BaseModel):
+    term: str
+    evidence_ids: list[str]
+
+
+class SearchSuggestion(BaseModel):
+    """A proposed starting search, from verified facts; the member edits and saves it."""
+    keywords: list[SuggestedTerm]
+    locations: list[str]
+    note: str
+
+
 class Preferences(BaseModel):
     keywords: list[str] = Field(
         default_factory=lambda: [
