@@ -1,3 +1,4 @@
+import time
 from career.db import Session, Record, put
 from career.config import settings
 from career.schemas import Package, QualityReview
@@ -188,3 +189,29 @@ def test_review_triggers_one_revision_before_accepting(monkeypatch):
     assert calls == ["Package", "QualityReview", "Package", "QualityReview"]
     assert result["cv"]["paragraphs"][0]["text"] == "Used satellite data."
     assert result["missing_information"] == ["Passport copy"] and result["review_notes"]
+
+
+def test_rejected_key_stops_the_search_with_one_warning(client, monkeypatch):
+    from career.ai import KeyRejected
+
+    verified_profile(client)
+    client.post("/api/sources", json={"kind": "greenhouse", "value": "example"})
+    feed = [JOB, {**JOB, "title": "Climate Analyst", "url": "https://example.org/jobs/2"}, {**JOB, "title": "GIS Lead", "url": "https://example.org/jobs/3"}]
+    monkeypatch.setattr("career.service.collect", lambda *a, **k: (feed, []))
+    monkeypatch.setattr(settings, "openai_api_key", "fake-test-key")
+    monkeypatch.setattr(settings, "evaluation_workers", 1)
+    calls = []
+
+    def rejected(*a):
+        calls.append(1)
+        time.sleep(0.2)  # the queued calls are cancelled while this one runs
+        raise KeyRejected("Your OpenAI API key was rejected by OpenAI. Replace it under Account.")
+
+    monkeypatch.setattr("career.service.match_job", rejected)
+    client.post("/api/scan")
+    state = client.get("/api/state").json()
+    warnings = state["runs"][0]["warnings"]
+    assert len(calls) < len(feed) and sum("rejected" in w for w in warnings) == 1
+    assert not any("could not be evaluated" in w for w in warnings)
+    # Not the postings' fault: no attempts recorded, so no backoff once the key is replaced.
+    assert all(not j.get("match_attempts") for j in state["jobs"])

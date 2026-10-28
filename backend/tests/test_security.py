@@ -172,3 +172,36 @@ def test_organisation_for_group_analytics(client, monkeypatch):
     time.sleep(0.2)
     assert sent[0]["properties"]["$groups"] == {"organisation": "UNECA"}
     assert client.put(f"/api/admin/users/{uid}", json={"organisation": ""}).json()["organisation"] == ""
+
+
+def test_rejected_key_is_reported_and_failed_calls_are_refunded(client, monkeypatch):
+    import httpx
+    from openai import AuthenticationError, APIConnectionError
+    from career.db import user_scope
+    from career.schemas import Match
+
+    monkeypatch.setattr(settings, "openai_api_key", "server-key")
+    request = httpx.Request("POST", "https://api.openai.com/v1/responses")
+    failure = [AuthenticationError("Incorrect API key provided", response=httpx.Response(401, request=request), body=None)]
+
+    class FakeClient:
+        def __init__(self, **kw):
+            self.responses = self
+
+        def parse(self, **kw):
+            raise failure[0]
+
+    monkeypatch.setattr(ai, "OpenAI", FakeClient)
+    owner = {"id": "owner-x", "email": "o@example.org", "role": "admin", "plan": "beta", "openai_key": "", "imap": None, "sponsored": False}
+    with user_scope(owner):
+        with pytest.raises(ai.KeyRejected, match="OPENAI_API_KEY"):
+            ai.structured("m", Match, "i", {})
+        failure[0] = APIConnectionError(request=request)
+        with pytest.raises(APIConnectionError):
+            ai.structured("m", Match, "i", {})
+    usage = ai.server_key_usage()
+    assert usage["calls"] == 0 and usage["by_user"]["owner-x"] == 0 and usage["by_purpose"]["Match"] == 0
+    with user_scope({**owner, "id": "member-y", "role": "member", "openai_key": "sk-own"}):
+        failure[0] = AuthenticationError("Incorrect API key provided", response=httpx.Response(401, request=request), body=None)
+        with pytest.raises(ai.KeyRejected, match="under Account"):
+            ai.structured("m", Match, "i", {})

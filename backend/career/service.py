@@ -12,7 +12,7 @@ from .db import Record, User, Session, put, read, rows, find, get_row, now, curr
 from .schemas import Preferences
 from .sources import collect, clean_url, Context
 from .relevance import screen, priority
-from .ai import match_job, write_package, ai_available
+from .ai import match_job, write_package, ai_available, KeyRejected
 from .jev import jev_enabled, jev_key, jev_state, score_job
 from .auth import plan_limits
 from .notifications import notify, notify_digest, availability as notify_ready
@@ -521,6 +521,12 @@ def _run_scan(run_id):
                         # Queued after the budget ran out: left unevaluated, not counted as a failure.
                         skipped_for_time += 1
                         continue
+                    except KeyRejected as e:
+                        # Every remaining call would fail the same way; the postings are not at fault.
+                        for pending in futures:
+                            pending.cancel()
+                        result.setdefault("warnings", []).append(str(e) + " No postings were evaluated after that.")
+                        break
                     except Exception:
                         db.rollback()
                         log.exception("Match evaluation failed for %s", row.data.get("title"))
