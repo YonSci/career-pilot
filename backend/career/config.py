@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     # Phase 2: members without an enabled source of their own search the catalog's
     # recent postings instead (starter results). Members with sources are unchanged.
     catalog_starter: bool = True
+    # Phase 4: per member and month, this many postings their keywords rejected
+    # (at most one per search) are stored and evaluated anyway, so jev_report can
+    # show whether keywords miss good jobs. Taken from the search's evaluation
+    # budget; never alerted. 0 turns it off.
+    keyword_sample_per_month: int = 10
     # Unshortlisted jobs unseen in any feed for this long are archived.
     archive_after_days: int = 45
     dashboard_dir: Path = Path("dashboard")

@@ -1,8 +1,10 @@
 # Shared job catalog: design
 
-Status: phases 1 (shadow catalog) and 2 (starter results) implemented in `career/catalog.py`, 29 October 2026. Phases 3 and 4 are proposals.
+Status: phases 1 (shadow catalog), 2 (starter results) and 4 (keyword-rejected sample) implemented, 29 October 2026. Phase 3 is a proposal.
 
 Phase 2 as built: "recent" means seen in a source's fetch within the last 7 days (`STARTER_DAYS`) and not past its deadline, an approximation of the retention decision below. Postings the member already has a job for, including skipped ones, are never offered again. Keyword-rejected postings are screened again on each search; nothing is stored for them.
+
+Phase 4 as built: the sample is drawn from each search's own keyword rejections (catalog and private sources alike), one per search and `KEYWORD_SAMPLE_PER_MONTH` per member, and is LLM-evaluated ahead of JEV so the comparison does not depend on JEV. JEV scoring of the sample is left out; `jev_report` keeps it out of the JEV comparison.
 
 ## Problem
 

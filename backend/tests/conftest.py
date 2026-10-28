@@ -66,6 +66,14 @@ def signup_member(client, email="member@example.org", password="member-password-
 
 
 @pytest.fixture(autouse=True)
+def no_keyword_sample(monkeypatch):
+    """The keyword-rejected sample is random; tests that need it switch it on."""
+    from career.config import settings
+
+    monkeypatch.setattr(settings, "keyword_sample_per_month", 0)
+
+
+@pytest.fixture(autouse=True)
 def no_dns(monkeypatch):
     """Tests never resolve real hostnames; example hosts count as public."""
     from career import sources

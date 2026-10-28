@@ -83,10 +83,17 @@ def main(argv=None):
     # the normal queue. sampled: evaluated because the random sample of postings
     # rank mode would hold picked it; kept apart because it was not chosen by keywords.
     scored, evaluated, sampled, decided = [], [], [], []
+    # LLM scores of postings the keywords kept, and of the keyword-rejected sample.
+    keyword_kept, keyword_rejected = [], []
     tokens, older, models = 0, 0, Counter()
     with Session() as db:
         min_scores = {}
         for row in db.query(Record).filter_by(kind="job").all():
+            match = row.data.get("match") or {}
+            if match.get("mode") == "ai":
+                (keyword_rejected if row.data.get("keyword_sample") else keyword_kept).append(match["score"])
+            if row.data.get("keyword_sample"):
+                continue  # not chosen by keywords, so kept out of the JEV comparison
             jev = row.data.get("jev")
             if not jev:
                 continue
@@ -142,6 +149,11 @@ def main(argv=None):
         print(f"  good matches among them: {share(sample_good, len(still_held), True)}; "
               f"about {rate * held_total:.0f} of the {held_total} held postings may be good matches")
 
+    # Whether keywords hide good jobs: the same LLM, on postings the keywords rejected.
+    print(f"Keyword-rejected sample evaluated by the LLM: {len(keyword_rejected)} (KEYWORD_SAMPLE_PER_MONTH={settings.keyword_sample_per_month} per member)")
+    if keyword_rejected:
+        print(f"  good matches (LLM >= {GOOD_LLM_SCORE}): {share(sum(1 for s in keyword_rejected if s >= GOOD_LLM_SCORE), len(keyword_rejected), True)}; "
+              f"among postings the keywords kept: {share(sum(1 for s in keyword_kept if s >= GOOD_LLM_SCORE), len(keyword_kept), True)}")
     print(f"Cutoff sweep (good match = LLM score >= {GOOD_LLM_SCORE} in the normal queue; JEV_CONFIDENT unchanged):")
     for cut in sorted({*SWEEP_CUTOFFS, settings.jev_min_score}):
         sends_all = share(count(scored, lambda s: kept(s[0], s[1], cut)), len(scored))

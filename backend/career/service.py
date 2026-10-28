@@ -13,7 +13,7 @@ from .db import Record, User, Session, put, read, rows, find, get_row, now, curr
 from .schemas import Preferences, APPLICATION_STAGES
 from .sources import collect, clean_url, Context
 from .relevance import screen, priority
-from .ai import match_job, write_package, ai_available, KeyRejected
+from .ai import match_job, write_package, ai_available, month_key, KeyRejected
 from . import catalog
 from .jev import JevCapReached, jev_enabled, jev_key, jev_state, held, score_job
 from .auth import plan_limits
@@ -290,6 +290,7 @@ def alertable(data, prefs):
         and match["score"] >= prefs["min_score"]
         and data.get("status") not in CLOSED
         and not expired(data)
+        and not data.get("keyword_sample")
         and not any(r["mandatory"] and r["status"] == "not_met" for r in match.get("requirements", []))
     )
 
@@ -392,8 +393,9 @@ def jev_stage(db, run, result, candidates, profile, prefs, deadline, budget):
     return sample + ranked + unscored
 
 
-def take(db, jobs, prefs, ctx):
-    """Keyword-screen fetched postings and store the ones kept. Returns (relevant, added)."""
+def take(db, jobs, prefs, ctx, rejected=None):
+    """Keyword-screen fetched postings and store the ones kept. Returns (relevant,
+    added); postings rejected only for missing keywords go to `rejected`."""
     relevant = added = 0
     for job in jobs:
         if job.get("partial"):
@@ -401,6 +403,8 @@ def take(db, jobs, prefs, ctx):
             continue
         verdict = screen(job, prefs)
         if not verdict["keep"]:
+            if rejected is not None and verdict["reason"] == "no keyword match":
+                rejected.append(job)
             continue
         job["screen"] = {k: v for k, v in verdict.items() if k != "keep"}
         row, created = ingest(db, job)
@@ -409,6 +413,22 @@ def take(db, jobs, prefs, ctx):
         relevant += 1
         added += int(created)
     return relevant, added
+
+
+def keyword_sample(db, rejected):
+    """Store one posting the keywords rejected, within the member's monthly
+    sample quota, so it is evaluated like any other. Returns its key or None."""
+    month = month_key()
+    taken = sum(1 for r in rows(db, "job") if r.data.get("keyword_sample") and (r.data.get("created") or "").startswith(month))
+    if taken >= settings.keyword_sample_per_month:
+        return None
+    known = {r.key for r in rows(db, "job")}
+    fresh = [j for j in rejected if "job:" + fingerprint({**j, "url": clean_url(j.get("url", ""))}) not in known]
+    if not fresh:
+        return None
+    job = {**random.choice(fresh), "keyword_sample": True, "screen": {"keyword_hits": [], "title_hits": []}}
+    row, created = ingest(db, job)
+    return row.key if row is not None and created else None
 
 
 def _run_scan(run_id):
@@ -448,6 +468,7 @@ def _run_scan(run_id):
         known_urls = {r.data.get("url") for r in rows(db, "job") if r.data.get("url")}
         seen_mail = {r.data["id"] for r in rows(db, "mail")}
         ctx = Context(known_urls=known_urls, seen_mail=seen_mail, deadline=deadline)
+        rejected = []
         # Sources deferred by an earlier search go first.
         sources.sort(key=lambda s: (0 if s.data.get("deferred_at") else 1, s.data.get("deferred_at") or ""))
         for source in sources:
@@ -467,7 +488,7 @@ def _run_scan(run_id):
                 jobs, mail_ids = collect(source.data, None, ctx)
                 # Before keyword screening, so the catalog also holds postings members' keywords reject.
                 catalog.record(jobs)
-                relevant, added = take(db, jobs, prefs, ctx)
+                relevant, added = take(db, jobs, prefs, ctx, rejected)
                 for mid in mail_ids:
                     put(db, "mail", "mail:" + mid, {"id": mid})
                 ctx.mail_ids.clear()
@@ -502,7 +523,7 @@ def _run_scan(run_id):
             if postings or catalog.has_postings(db):
                 for job in postings:
                     job["via"] = "catalog"
-                relevant, added = take(db, postings, prefs, ctx)
+                relevant, added = take(db, postings, prefs, ctx, rejected)
                 result["added"] += added
                 result["sources"].append(
                     {"name": "Recent postings from ReliefWeb and employer boards (shared)", "status": "ok", "received": len(postings), "relevant": relevant, "added": added, "pages": 0}
@@ -512,6 +533,11 @@ def _run_scan(run_id):
                     "No job sources configured, and no recent shared postings yet. Add a feed in Job sources, then run a new search."
                 )
             put(db, "run", run.key, result.copy())
+        budget = evaluation_budget(db)
+        verified_profile = profile if any(f.get("verified") for f in profile.get("facts", [])) else None
+        sample_key = None
+        if rejected and verified_profile and budget and ai_available() and settings.keyword_sample_per_month > 0:
+            sample_key = keyword_sample(db, rejected)
         # Evaluate the most promising unevaluated postings first, within budget.
         candidates = [
             r for r in rows(db, "job")
@@ -521,11 +547,13 @@ def _run_scan(run_id):
             and not in_backoff(r.data)
         ]
         candidates.sort(key=lambda r: priority(r.data))
-        budget = evaluation_budget(db)
-        verified_profile = profile if any(f.get("verified") for f in profile.get("facts", [])) else None
+        # This search's keyword sample goes first, past JEV, so it is always evaluated.
+        sample = [r for r in candidates if r.key == sample_key]
+        candidates = [r for r in candidates if r.key != sample_key]
         # JEV runs before the budget is applied, so it chooses from every candidate, not just the first few.
         if verified_profile and budget and ai_available() and jev_enabled():
-            candidates = jev_stage(db, run, result, candidates, verified_profile, prefs, deadline, budget)
+            candidates = jev_stage(db, run, result, candidates, verified_profile, prefs, deadline, budget - len(sample))
+        candidates = sample + candidates
         batch = candidates[:budget]
         if candidates and budget == 0:
             result.setdefault("warnings", []).append(

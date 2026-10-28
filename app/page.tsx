@@ -86,6 +86,7 @@ const POSTING_DETAILS = [
 ] as const;
 type Job = {
   id: string;
+  keyword_sample?: boolean;
   title: string;
   company: string;
   location: string;
@@ -1422,6 +1423,7 @@ export default function Home() {
                       <div className="job-meta">
                         <span>{j.location}</span>
                         <span>{j.source}</span>
+                        {j.keyword_sample && <span>Outside your keywords</span>}
                         {j.posted && <span>Posted {date(j.posted, "")}</span>}
                         <span className={j.expired ? "danger-text" : ""}>
                           {j.expired ? "Closed · " : ""}
@@ -2884,6 +2886,11 @@ export default function Home() {
                 </button>
               </div>
               {job.expired && <p className="danger-text">The listed deadline has passed.</p>}
+              {job.keyword_sample && (
+                <p className="field-help">
+                  Outside your keywords: picked at random to check whether your keywords miss good jobs. It is evaluated like any other posting but never sent as an alert. If it fits, consider adding a keyword under Preferences.
+                </p>
+              )}
               {job.jev && (
                 <section className="jev-detail">
                   <div className="panel-heading">

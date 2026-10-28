@@ -38,6 +38,7 @@ Jobs Find AI is a personal job-search assistant for careers in data science, AI,
 - Postings not seen in any feed for 45 days and never shortlisted are archived.
 - Application stages: after marking a posting applied, move it to Interview, Offer or Not selected from the job detail or the pipeline on the Applications tab. Each change is dated. Postings in these stages are no longer evaluated or alerted.
 - Starter results: without job sources of your own, Run search compares your verified CV with recent postings other members' searches found on ReliefWeb and employer job boards (nothing about who found them is shared). Add your own sources for boards you follow; then searches use those instead.
+- "Outside your keywords" on a job: a posting your keywords rejected, picked at random (at most 10 a month) and evaluated anyway to check whether your keywords miss good jobs. It is never sent as an alert; if it fits, add a keyword under Preferences.
 - Search preferences has "Suggest from my CV": it proposes keywords and locations from verified evidence, fills the form with an Undo, and saves nothing until you save.
 
 # Alerts
