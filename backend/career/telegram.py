@@ -1,10 +1,11 @@
 """Telegram long polling shared by all accounts on one bot.
 
-Linking: the dashboard issues a short code for the signed-in user. They send
-that code to the bot from their own Telegram account. A private chat that
-presents a valid, unexpired code becomes that user's linked chat. Buttons only
-act on jobs owned by the user whose chat pressed them. Unknown senders are
-never answered.
+Linking: the dashboard issues a short code for the signed-in user and a
+t.me deep link that sends it as "/start CODE" when they press Start (typing
+the code also works). A private chat that presents a valid, unexpired code
+becomes that user's linked chat. Buttons only act on jobs owned by the user
+whose chat pressed them. An unlinked chat that presses Start gets a fixed
+pointer to the sign-up page; other messages from unknown senders get no reply.
 """
 
 import logging
@@ -111,9 +112,20 @@ def handle_message(db, message):
                 db.commit()
                 api("sendMessage", chat_id=chat_id, text=f"Linked. {settings.app_name} will send matching jobs here. Use Interested / Skip under each alert.")
                 return
-    if text.startswith("/start") and user_for_chat(db, chat_id):
+    if not text.startswith("/start"):
+        return  # Unknown senders receive no reply to anything else.
+    if user_for_chat(db, chat_id):
         api("sendMessage", chat_id=chat_id, text=f"This chat is linked to {settings.app_name}. Alerts arrive here after each search.")
-    # Unknown senders receive no reply at all.
+        return
+    app = settings.public_url.rstrip("/") + "/app/"
+    if supplied:
+        api("sendMessage", chat_id=chat_id, text=f"This link has expired or was already used. Open {app}, go to Account and press Link Telegram again.")
+    else:
+        api(
+            "sendMessage",
+            chat_id=chat_id,
+            text=f"Welcome to {settings.app_name}. To receive jobs that match your CV here, create a free account at {app}?join=1 , then press Link Telegram under Account.",
+        )
 
 
 def handle_callback(db, callback):

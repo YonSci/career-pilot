@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     secret_key: str = ""
     # Set to false once the beta is over to allow open sign-up.
     invite_only: bool = True
+    # While invite-only, this many people a day (rolling 24 hours) may join
+    # without a code: the sign-up form and "Request an invite" let them in
+    # straight away. Beyond that they need a code. 0 = codes only.
+    open_seats_per_day: int = 25
     # Optional: only this address may create the first (owner) account. Otherwise
     # the first sign-up must present APP_TOKEN as the setup code.
     owner_email: str = ""

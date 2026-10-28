@@ -19,7 +19,11 @@ Cost: the `starter` instance (about 7 USD per month) plus the 2 GB disk (cents).
 
 ## Inviting people
 
-Cohort tab → Invitations → Generate codes. Each code is a link like `https://<host>/app/?invite=CODE` and works once. Send it with the short onboarding note below. The same tab shows the two activation metrics per person: verified CV plus at least one source, and whether they prepared an application.
+Without a code: while invite-only, `OPEN_SEATS_PER_DAY` people (default 25, counted over the last 24 hours) may join without one. "Request an invite" on the landing page records the request as before and, while a place is open, goes straight to sign-up with the email filled in; an empty code on the sign-up form uses a place too. Once the day's places are taken, requests wait for you as before. Open places show in the Invitations list with the note `open:<email>`. Set `OPEN_SEATS_PER_DAY=0` to go back to codes only, or `INVITE_ONLY=false` for unlimited sign-up. Only the first `SPONSORED_SEATS` members get AI included either way; later members bring their own OpenAI key.
+
+Telegram: Account → Link Telegram shows "Open Telegram and press Start", a `t.me/<bot>?start=CODE` link that links the chat when they press Start, without typing the code. The bot replies to Start from a chat nobody linked with the sign-up link, and to an expired link with how to get a new one; other messages from strangers still get no reply.
+
+With codes: Cohort tab → Invitations → Generate codes. Each code is a link like `https://<host>/app/?invite=CODE` and works once. Send it with the short onboarding note below. The same tab shows the two activation metrics per person: verified CV plus at least one source, and whether they prepared an application.
 
 Onboarding note to send:
 

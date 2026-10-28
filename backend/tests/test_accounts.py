@@ -17,10 +17,11 @@ def test_first_account_is_owner_and_claims_legacy_records(client):
     assert any(j["title"] == "Legacy" for j in client.get("/api/state").json()["jobs"])
 
 
-def test_signup_requires_invite_and_login_sets_cookie(client):
+def test_signup_requires_invite_and_login_sets_cookie(client, monkeypatch):
     from fastapi.testclient import TestClient
     from career.main import app
 
+    monkeypatch.setattr(settings, "open_seats_per_day", 0)  # codes only
     anon = TestClient(app)
     r = anon.post("/api/auth/signup", json={"email": "x@example.org", "password": "long-enough-pw"}, headers=CSRF)
     assert r.status_code == 422 and "invite" in r.json()["detail"]

@@ -552,12 +552,24 @@ async function call<T = Record<string, unknown>>(path: string, method = "GET", b
   }
   return r.json() as Promise<T>;
 }
-function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_account: boolean; invite_only: boolean; owner_email_fixed?: boolean }; onDone: () => void }) {
-  const [mode, setMode] = useState<"login" | "signup">(setup.needs_first_account ? "signup" : "login");
-  const [email, setEmail] = useState(""),
+// What the landing page's invitation form passed on (same origin), so sign-up starts filled in.
+function joinDetails(): { email?: string; name?: string } {
+  try {
+    return JSON.parse(sessionStorage.getItem("jfa-join") || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_account: boolean; invite_only: boolean; open_seats_left?: number; owner_email_fixed?: boolean }; onDone: () => void }) {
+  const params = new URLSearchParams(window.location.search);
+  // Invitation links and "Request an invite" land on sign-up, not sign-in.
+  const [mode, setMode] = useState<"login" | "signup">(setup.needs_first_account || params.has("invite") || params.has("join") ? "signup" : "login");
+  const openSeats = setup.open_seats_left ?? 0;
+  const [email, setEmail] = useState(joinDetails().email ?? ""),
     [password, setPassword] = useState(""),
-    [name, setName] = useState(""),
-    [invite, setInvite] = useState(new URLSearchParams(window.location.search).get("invite") ?? ""),
+    [name, setName] = useState(joinDetails().name ?? ""),
+    [invite, setInvite] = useState(params.get("invite") ?? ""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   useEffect(() => {
@@ -569,6 +581,9 @@ function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_
     setError("");
     try {
       await call("/auth/" + mode, "POST", { email, password, name, invite });
+      try {
+        sessionStorage.removeItem("jfa-join");
+      } catch {}
       track(mode === "signup" ? "signup_completed" : "login_completed", { with_invite: !!invite && !setup.needs_first_account });
       onDone();
     } catch (err) {
@@ -613,9 +628,17 @@ function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_
               </label>
               {mode === "signup" && !setup.needs_first_account && setup.invite_only && (
                 <label className="field">
-                  Invite code
-                  <input required value={invite} onChange={(e) => setInvite(e.target.value)} />
-                  <span className="field-help">The beta is invitation-only. Use the code you received.</span>
+                  {openSeats > 0 ? "Invite code (optional)" : "Invite code"}
+                  <input required={openSeats === 0} value={invite} onChange={(e) => setInvite(e.target.value)} />
+                  <span className="field-help">
+                    {openSeats > 0 ? (
+                      "No code? Leave this empty: places are open today."
+                    ) : (
+                      <>
+                        Today's open places are taken. <a href="/#invite">Request an invitation</a> and we will email you a code.
+                      </>
+                    )}
+                  </span>
                 </label>
               )}
               {mode === "signup" && setup.needs_first_account && (
@@ -633,7 +656,7 @@ function AuthScreen({ setup, onDone }: { setup: { app_name: string; needs_first_
             </form>
             {!setup.needs_first_account && (
               <p className="field-help">
-                {mode === "login" ? "Have an invite? " : "Already have an account? "}
+                {mode === "login" ? "New here? " : "Already have an account? "}
                 <button className="text-button" onClick={() => setMode(mode === "login" ? "signup" : "login")}>
                   {mode === "login" ? "Create an account" : "Sign in"}
                 </button>
@@ -731,7 +754,7 @@ function Assistant() {
   );
 }
 export default function Home() {
-  const [setup, setSetup] = useState<null | { app_name: string; needs_first_account: boolean; invite_only: boolean; owner_email_fixed?: boolean; vapid_public_key?: string }>(null);
+  const [setup, setSetup] = useState<null | { app_name: string; needs_first_account: boolean; invite_only: boolean; open_seats_left?: number; owner_email_fixed?: boolean; vapid_public_key?: string }>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [s, setS] = useState<State>(initial),
     [tab, setTab] = useState("opportunities"),
@@ -753,7 +776,7 @@ export default function Home() {
     [sourceTest, setSourceTest] = useState<null | { received: number; sample: { title: string; company: string; location: string; url: string }[] }>(null),
     [editing, setEditing] = useState<App | null>(null),
     [draft, setDraft] = useState<Pack | null>(null),
-    [linkCode, setLinkCode] = useState<null | { code: string; bot_username: string }>(null),
+    [linkCode, setLinkCode] = useState<null | { code: string; bot_username: string; link?: string }>(null),
     [apiKey, setApiKey] = useState(""),
     [imap, setImap] = useState({ host: "imap.gmail.com", port: 993, username: "", password: "", folder: "JobsFindAI" }),
     [pw, setPw] = useState({ current: "", new: "" }),
@@ -770,7 +793,7 @@ export default function Home() {
   }, []);
   const boot = useCallback(async () => {
     try {
-      const s = await call<{ app_name: string; needs_first_account: boolean; invite_only: boolean; owner_email_fixed?: boolean; analytics?: Analytics; vapid_public_key?: string }>("/setup");
+      const s = await call<{ app_name: string; needs_first_account: boolean; invite_only: boolean; open_seats_left?: number; owner_email_fixed?: boolean; analytics?: Analytics; vapid_public_key?: string }>("/setup");
       setSetup(s);
       startAnalytics(s.analytics ?? null);
     } catch {}
@@ -795,6 +818,24 @@ export default function Home() {
       if ("serviceWorker" in navigator && window.location.pathname.startsWith("/app")) navigator.serviceWorker.register("/app/sw.js").catch(() => {});
     } catch {}
   }, [boot]);
+  // While a Telegram link is pending, notice when the bot confirms it (the code lasts 15 minutes).
+  useEffect(() => {
+    if (!linkCode) return;
+    const started = Date.now();
+    const timer = window.setInterval(async () => {
+      if (Date.now() - started > 15 * 60_000) return window.clearInterval(timer);
+      try {
+        const status = await call<{ linked: boolean }>("/telegram/link");
+        if (status.linked) {
+          window.clearInterval(timer);
+          setLinkCode(null);
+          track("telegram_linked", {});
+          await refresh();
+        }
+      } catch {}
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [linkCode, refresh]);
   const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void> }) | null>(null);
   const [installed, setInstalled] = useState(false);
   useEffect(() => {
@@ -1257,13 +1298,14 @@ export default function Home() {
                 </span>
                 <div>
                   <strong>Set up your personal search</strong>
-                  <span>Three steps to your first useful shortlist.</span>
+                  <span>{s.telegram.bot_configured ? "Three steps to your first useful shortlist, and alerts on your phone." : "Three steps to your first useful shortlist."}</span>
                 </div>
               </div>
               {[
                 [s.connections.ai, s.connections.ai_sponsored ? "AI included in your seat" : "Add your OpenAI key", () => setTab("account")],
                 [verified > 0, "Verify your CV", () => setTab("profile")],
                 [s.sources.length > 0, "Add job sources", () => setTab("sources")],
+                ...(s.telegram.bot_configured ? [[s.telegram.linked, "Get alerts on Telegram (optional)", () => setTab("account")]] : []),
               ].map(([done, label, action], i) => (
                 <button key={i} className={done ? "done" : ""} onClick={action as () => void}>
                   <span>{done ? <Check size={14} /> : i + 1}</span>
@@ -2109,18 +2151,24 @@ export default function Home() {
                     <>
                       {linkCode ? (
                         <div className="run-row">
-                          <strong>Send this code to @{linkCode.bot_username || "the bot"} on Telegram:</strong>
-                          <p style={{ fontSize: "1.6rem", letterSpacing: "0.2em" }}>{linkCode.code}</p>
-                          <p className="muted-text">Open the bot, press Start, and send the code as a message. It expires in 15 minutes. This page updates when the link succeeds.</p>
+                          {linkCode.link && (
+                            <a className="button primary" href={linkCode.link} target="_blank" rel="noreferrer" onClick={() => track("telegram_link_opened", {})}>
+                              <Send size={17} /> Open Telegram and press Start
+                            </a>
+                          )}
+                          <p className="muted-text">
+                            {linkCode.link ? "Telegram opens the bot; pressing Start links this account. On a computer without Telegram, send this code to " : "Open the bot, press Start, and send this code to "}@{linkCode.bot_username || "the bot"}:{" "}
+                            <strong style={{ letterSpacing: "0.15em" }}>{linkCode.code}</strong>. It expires in 15 minutes; this page updates when the link succeeds.
+                          </p>
                         </div>
                       ) : (
-                        <p className="field-help">Link your own Telegram account to receive alerts with Interested / Skip buttons.</p>
+                        <p className="field-help">Get matching jobs on your phone, with Interested / Skip buttons that update your shortlist.</p>
                       )}
-                      <button className="button primary" disabled={!!busy} onClick={() => act("link", async () => {
+                      <button className={linkCode ? "text-button" : "button primary"} disabled={!!busy} onClick={() => act("link", async () => {
                             track("telegram_link_started", {});
-                            setLinkCode(await call<{ code: string; bot_username: string }>("/telegram/link", "POST"));
+                            setLinkCode(await call<{ code: string; bot_username: string; link?: string }>("/telegram/link", "POST"));
                           })}>
-                        <Link2 size={17} /> {linkCode ? "New code" : "Link Telegram"}
+                        <Link2 size={17} /> {linkCode ? "New link" : "Link Telegram"}
                       </button>
                     </>
                   )}

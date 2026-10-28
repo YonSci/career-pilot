@@ -288,7 +288,7 @@
 
 <header class="wrap hero">
   <div>
-    <span class="badge"><i></i> Private beta · invitation only · free during the beta</span>
+    <span class="badge"><i></i> Private beta · free during the beta · limited places each day</span>
     <h1>The right <span class="roles" id="roles">data science</span><br>jobs find you. Every match, explained.</h1>
     <p class="lead" style="margin-top:20px">Jobs Find AI watches ReliefWeb, your LinkedIn alerts and the employer boards you choose, day and night. It scores every posting against the <strong>verified</strong> facts in your CV, tells you exactly why you fit and what is missing, pings you on Telegram, and drafts applications that claim only what you can prove.</p>
     <form class="mini" id="mini" novalidate>
@@ -296,7 +296,7 @@
       <button class="btn btn-primary" type="submit">Request an invite</button>
     </form>
     <p class="msg" id="mini-msg" style="display:none"></p>
-    <p class="note">Free during the beta · AI usage included for the first members, your own OpenAI key after that · Invitations go out weekly.</p>
+    <p class="note">Free during the beta · AI usage included for the first members, your own OpenAI key after that · While places are open, you can start straight away.</p>
   </div>
   <div class="frame reveal" aria-label="Product preview">
     <div class="frame-bar"><i></i><i></i><i></i>
@@ -535,7 +535,7 @@
     <div>
       <span class="eyebrow" style="color:#bfd8c9">Private beta</span>
       <h2>Request an invitation.</h2>
-      <p>We are onboarding a small cohort of professionals in data, climate, geospatial, agriculture and development roles. Tell us a line about your field and we will send an invitation code. Invitations go out weekly.</p>
+      <p>We are onboarding professionals in data, climate, geospatial, agriculture and development roles. Tell us a line about your field. While places are open you go straight to creating your account; otherwise we email you an invitation.</p>
     </div>
     <form class="form" id="waitlist" novalidate>
       <label>Your name<input type="text" name="name" placeholder="e.g. Amina Bekele" autocomplete="name" /></label>
@@ -544,7 +544,7 @@
       <button class="btn btn-light" type="submit">Request an invite</button>
       <p class="ok" id="ok" hidden>Thank you. Your request is in; invitations go out in small batches.</p>
       <p class="err" id="err" hidden></p>
-      <p style="font-size:.8rem;color:rgba(255,255,255,.6)">Already have a code? <a href="/app/" style="color:#fff">Create your account</a>.</p>
+      <p style="font-size:.8rem;color:rgba(255,255,255,.6)">Already have a code or an invitation email? <a href="/app/?join=1" style="color:#fff">Create your account</a>.</p>
     </form>
   </div>
 </section>
@@ -694,12 +694,19 @@
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email || "")) throw new Error("Enter a valid email address.");
     const r = await fetch("/api/waitlist", { method: "POST", headers: H, body: JSON.stringify(data) });
     if (!r.ok) { const j = await r.json().catch(() => ({})); track("invite_request_failed", { status: r.status }); throw new Error(j.detail || "Something went wrong."); }
-    track("invite_requested", { with_note: !!(data.note && data.note.trim()), with_name: !!(data.name && data.name.trim()) });
+    const j = await r.json().catch(() => ({}));
+    track("invite_requested", { with_note: !!(data.note && data.note.trim()), with_name: !!(data.name && data.name.trim()), join_now: !!j.join_now });
+    if (j.registered) return "You already have an account. Sign in at /app/.";
+    if (!j.join_now) return "Thank you. Your request is in; we will email you an invitation.";
+    // A place is open: continue to sign-up with the details filled in (kept out of the URL).
+    try { sessionStorage.setItem("jfa-join", JSON.stringify({ email: data.email, name: data.name || "" })); } catch (e) {}
+    setTimeout(() => { location.href = "/app/?join=1"; }, 900);
+    return "Your place is ready. Opening sign-up…";
   };
   const mini = document.getElementById("mini"), miniMsg = document.getElementById("mini-msg");
   mini.addEventListener("submit", async (e) => {
     e.preventDefault(); miniMsg.style.display = "block"; miniMsg.className = "msg";
-    try { await submitInvite(Object.fromEntries(new FormData(mini).entries())); mini.reset(); miniMsg.classList.add("ok"); miniMsg.textContent = "Thank you. Your request is in; invitations go out weekly."; }
+    try { const done = await submitInvite(Object.fromEntries(new FormData(mini).entries())); mini.reset(); miniMsg.classList.add("ok"); miniMsg.textContent = done; }
     catch (ex) { miniMsg.classList.add("err"); miniMsg.textContent = ex.message; }
   });
   const form = document.getElementById("waitlist");
@@ -707,7 +714,7 @@
     e.preventDefault();
     const ok = document.getElementById("ok"), err = document.getElementById("err"); ok.hidden = true; err.hidden = true;
     const button = form.querySelector("button"); button.disabled = true;
-    try { await submitInvite(Object.fromEntries(new FormData(form).entries())); form.reset(); ok.hidden = false; }
+    try { const done = await submitInvite(Object.fromEntries(new FormData(form).entries())); form.reset(); ok.textContent = done; ok.hidden = false; }
     catch (ex) { err.textContent = ex.message; err.hidden = false; }
     finally { button.disabled = false; }
   });

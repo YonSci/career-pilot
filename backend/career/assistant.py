@@ -15,7 +15,7 @@ KNOWLEDGE = """
 Jobs Find AI is a personal job-search assistant for careers in data science, AI, climate, geospatial and remote sensing, hydrology, agriculture and international development. It continuously collects job postings from sources the user chooses, screens them against the user's keywords, asks an AI to explain requirement by requirement how each posting matches the user's VERIFIED CV facts, alerts the user (in-app inbox, Telegram, email), and drafts application documents only when the user clicks "Prepare application". It never submits applications, never contacts employers, and drafts only claims supported by verified evidence, checked by an independent review.
 
 # Getting started (first hour)
-1. Create an account with an invitation code (the beta is invitation-only). Request one on the landing page; the owner sends invitation links.
+1. Create an account. While the day's open places last, press Request an invite on the landing page (or Create an account at /app/) and leave the invite code empty; sign-up opens straight away. When places are taken, the request joins the waitlist and the owner emails an invitation link. Invitation and referral links open the sign-up form with the code filled in.
 2. Account tab: the first beta members have AI usage included on the founder's key ("AI included in your beta seat": up to 25 evaluations per search, 300 per month, 5 application packages a month). Other members paste an OpenAI API key (platform.openai.com → API keys); evaluations and drafts then run on their own key, typical cost 1 to 3 US dollars per search of 50 postings, billed by OpenAI. Anyone can add their own key at any time to lift the included limits. Keys are verified, stored encrypted, and can be removed any time.
 3. My evidence tab: upload a CV (DOCX, text PDF, TXT, Markdown, up to 5 MB) or paste text. Facts are extracted with exact source quotes. Tick "verified" for true facts (Select all after reviewing), edit wrong ones, then Save evidence. Only verified facts are used for matching and drafting.
 4. Job sources tab: add sources. Suggested sources are one click. Use "Test source" to see what a source returns before saving.
@@ -41,7 +41,7 @@ Jobs Find AI is a personal job-search assistant for careers in data science, AI,
 
 # Alerts
 - The in-app inbox ("New" filter and badge) always receives matches at or above the minimum score with no failed mandatory requirement, once per job.
-- Telegram: under Account, click "Link Telegram", then send the 6-character code to the bot from your own Telegram account within 15 minutes. Alerts carry "Interested" and "Skip" buttons which update the shortlist. Only the linked chat can change job status.
+- Telegram: under Account, click "Link Telegram", then "Open Telegram and press Start": pressing Start in the bot links the chat, with no code to type. On a computer without Telegram, send the 6-character code shown to the bot from your phone within 15 minutes. Alerts carry "Interested" and "Skip" buttons which update the shortlist. Only the linked chat can change job status.
 - Email: alerts go to the account's sign-in email when the server has an outgoing mail server configured; use "Send test" under Preferences.
 - Delivery mode: one message per job, or one digest per search.
 - WhatsApp is available only to the owner account.
@@ -65,7 +65,7 @@ Jobs Find AI is a personal job-search assistant for careers in data science, AI,
 - "Add your AI key": the account has no OpenAI key; add it under Account.
 - A source shows "failed" in Job sources → Search activity: check the identifier or URL, use Test source; ReliefWeb occasionally drops connections and is retried automatically.
 - Mailbox refused login: use an app password, not the normal password, and make sure the JobsFindAI label exists.
-- Telegram code expired: generate a new code under Account.
+- Telegram link expired: press New link under Account (the bot also says so when an expired link is used).
 - A search shows "interrupted": the server restarted during it; run the search again.
 - Unranked postings: they wait for the next search (50 per search limit) or the account has no AI key (keyword ranking only).
 - Contact: use the invitation email or the landing page form to reach the owner.

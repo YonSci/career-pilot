@@ -164,6 +164,13 @@ def list_invites(db):
     return [r.data for r in rows(db, "invite", user_id=SYSTEM)]
 
 
+def open_seats_left(db):
+    """Places left in the last 24 hours for joining without a code."""
+    since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    used = sum(1 for i in list_invites(db) if (i.get("note") or "").startswith("open:") and (i.get("created") or "") >= since)
+    return max(0, settings.open_seats_per_day - used)
+
+
 def add_waitlist(db, email, name="", note=""):
     """Public invitation requests from the landing page (system records)."""
     email = (email or "").strip().lower()
@@ -222,9 +229,17 @@ def register(db, email, password, name="", invite=None):
             raise ValueError("The owner account must use the configured owner email address.")
     if not first and settings.invite_only:
         code = (invite or "").strip()
-        invite_row = db.query(Record).filter_by(user_id=SYSTEM, key="invite:" + code).first() if code else None
+        if not code:
+            if not open_seats_left(db):
+                raise ValueError(
+                    ("Today's open places are taken." if settings.open_seats_per_day else "An invite code is required during the beta.")
+                    + " Request an invitation on the home page and we will email you a code."
+                )
+            code = create_invites(db, 1, note="open:" + email)[0]
+        invite_row = db.query(Record).filter_by(user_id=SYSTEM, key="invite:" + code).first()
         if not invite_row or invite_row.data.get("used_by"):
-            raise ValueError("A valid invite code is required during the beta.")
+            hint = " Leave the field empty to join without a code." if open_seats_left(db) else ""
+            raise ValueError("This invite code is not valid or was already used." + hint)
     sponsored = (
         not first
         and settings.sponsored_seats > 0

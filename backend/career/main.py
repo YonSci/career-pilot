@@ -216,6 +216,7 @@ def setup(db=Depends(db_session)):
         "app_name": settings.app_name,
         "needs_first_account": db.query(User).count() == 0,
         "invite_only": settings.invite_only,
+        "open_seats_left": accounts.open_seats_left(db) if settings.invite_only else 0,
         "owner_email_fixed": bool(settings.owner_email),
         "sponsored_seats_left": max(0, settings.sponsored_seats - accounts.sponsored_count(db)) if settings.openai_api_key else 0,
         "vapid_public_key": settings.vapid_public_key if settings.vapid_private_key else "",
@@ -609,7 +610,9 @@ def waitlist(body: WaitlistRequest, request: Request, db=Depends(db_session)):
         accounts.add_waitlist(db, body.email, body.name, body.note)
     except ValueError as e:
         raise HTTPException(422, str(e))
-    return {"ok": True}
+    # While places are open the landing page sends them straight to sign-up.
+    registered = db.query(User).filter_by(email=body.email.strip().lower()).first() is not None
+    return {"ok": True, "join_now": not registered and (not settings.invite_only or accounts.open_seats_left(db) > 0), "registered": registered}
 
 
 class Credentials(BaseModel):
@@ -1366,7 +1369,14 @@ async def telegram_link(db=Depends(db_session)):
         raise HTTPException(409, "Telegram is not configured on this server.")
     code = telegram.create_link_code(db)
     username = await run_in_threadpool(telegram.bot_username)
-    return {"code": code, "bot_username": username, "expires_minutes": 15, **telegram.link_status(db)}
+    # A deep link sends "/start CODE" when they press Start, so nothing is typed.
+    link = f"https://t.me/{username}?start={code}" if username else ""
+    return {"code": code, "bot_username": username, "link": link, "expires_minutes": 15, **telegram.link_status(db)}
+
+
+@app.get("/api/telegram/link", dependencies=[Depends(auth)])
+def telegram_link_status(db=Depends(db_session)):
+    return telegram.link_status(db)
 
 
 @app.delete("/api/telegram/link", dependencies=[Depends(auth)])
