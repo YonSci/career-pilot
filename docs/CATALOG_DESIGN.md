@@ -58,12 +58,15 @@ SQLite stays. Catalog postings use the existing `records` table with `user_id = 
 
 Each phase can be released and reverted on its own. Phase 1 is about two days of work; the full rollout is about one to two weeks.
 
-## Decisions for the owner
+## Decisions for the owner (recommended answers, 29 October 2026)
 
-- **Which sources feed the catalog:** only an owner-curated list, or also every public source a member adds? The second gives more coverage and reveals nothing about the member, but lets any member add load.
-- **Retention:** how long a posting not seen in any feed stays a candidate. Today it's 45 days to archive.
-- **Freshness checks:** whether to re-check that a posting is still open before alerting. That costs one fetch per alert.
-- **Source terms:** confirm that each board's terms allow storing postings centrally and showing them to members. ReliefWeb needs an `appname`; ATS board APIs are public.
+- **Which sources feed the catalog:** an allowlist by source type. Member-added ReliefWeb searches and employer boards (Greenhouse, Lever, Ashby, Workable, SmartRecruiters) feed it automatically. Remotive, careers pages and RSS feeds stay private to the member who added them unless the owner approves a specific site. Mailbox and manual postings are always private.
+- **Retention:** a posting stays a candidate until its deadline passes or it is missing from 7 days of successful fetches of its source. Employer boards and ReliefWeb list every open posting, so absence usually means closed. Catalog text is deleted after 90 days unless a member has a job for it. Members' own jobs keep the 45-day archive.
+- **Freshness before alerts:** no extra fetch. Only alert on postings present in their source's most recent successful fetch.
+- **Source terms** (from each provider's own documentation; not legal advice):
+  - Remotive forbids passing its jobs to third-party sites, Google Jobs included, and using them to collect signups. It is excluded from the catalog and, since 29 October 2026, from the public job pages, channel and structured data (`PRIVATE_SOURCES` in `career/public_jobs.py`).
+  - ReliefWeb: anyone may use the API with a pre-approved `appname`. Respect the original organisation's rights: show it as the source and link to the posting.
+  - Greenhouse and Lever job board data is public and needs no key; Lever notes published postings "may be scraped by third parties". Neither states aggregator terms. Show an excerpt, link to the employer's page, and remove a posting if an employer asks.
 
 ## Not in scope
 

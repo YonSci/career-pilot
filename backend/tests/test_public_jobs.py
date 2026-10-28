@@ -28,6 +28,7 @@ def test_public_listings_show_public_facts_only(client):
         seed(db, owner, "b", url="https://example.org/jobs/b", title="GIS Analyst", deadline=soon)
         seed(db, owner, "c", url="https://example.org/jobs/c", title="From my inbox", source="Email alert")
         seed(db, owner, "d", url="https://example.org/jobs/d", title="Pasted by hand", source="Manual")
+        seed(db, owner, "r", url="https://remotive.com/remote-jobs/data/r", title="Remotive role", source="Remotive")
         seed(db, owner, "e", url="https://example.org/jobs/e", title="Expired role", deadline="2020-01-01")
         seed(db, owner, "f", url="https://example.org/jobs/f", title="Stale role", last_seen=(datetime.now(timezone.utc) - timedelta(days=40)).isoformat())
         seed(db, owner, "g", url="https://example.org/jobs/g", title="Archived role", status="archived")
@@ -37,7 +38,7 @@ def test_public_listings_show_public_facts_only(client):
     d = anon.get("/api/public/jobs").json()
     titles = [j["title"] for j in d["latest"]]
     assert titles.count("Hydrologist") == 1 and "GIS Analyst" in titles and "Evaluated but generic title" in titles
-    for hidden in ("From my inbox", "Pasted by hand", "Expired role", "Stale role", "Archived role", "Country Director"):
+    for hidden in ("From my inbox", "Pasted by hand", "Remotive role", "Expired role", "Stale role", "Archived role", "Country Director"):
         assert hidden not in titles
     assert [j["title"] for j in d["featured"]] == ["Hydrologist"]
     assert [j["title"] for j in d["closing_soon"]] == ["GIS Analyst"]

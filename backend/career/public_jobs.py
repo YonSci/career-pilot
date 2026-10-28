@@ -4,7 +4,7 @@ Only postings that came from public boards and feeds are shown, with public
 facts only (title, employer, location, source, dates, link, short excerpt).
 Nothing about who collected a posting, how it scored for anyone, or what
 anyone did with it is exposed. Postings from mailboxes and manual entries
-are never listed. Results are cached for ten minutes."""
+are never listed, nor are sources whose terms forbid republishing. Results are cached for ten minutes."""
 
 import hashlib
 import html
@@ -104,7 +104,9 @@ def sector_of(title):
             hits.append(slug)
     return hits
 
-PRIVATE_SOURCES = ("Email alert", "Manual")
+# Remotive's API terms forbid passing its jobs to third-party sites (Google Jobs is
+# named) and using them to collect signups, so they stay inside members' own feeds.
+PRIVATE_SOURCES = ("Email alert", "Manual", "Remotive")
 FEATURED_SCORE = 75
 RELEVANT_SCORE = 60  # or a field keyword in the title: keeps generic postings off the public list
 STALE_DAYS = 21
