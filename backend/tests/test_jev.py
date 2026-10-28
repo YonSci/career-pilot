@@ -108,7 +108,7 @@ def test_shadow_mode_stores_scores_without_changing_llm_order(client, monkeypatc
     assert llm_calls == [SENIOR["title"]]  # keyword priority, as without JEV
     state = client.get("/api/state").json()
     assert all(j["jev"]["score"] for j in state["jobs"])
-    assert state["runs"][0]["jev"] == {"scored": 3, "cached": 0, "failed": 0, "held": 0, "tokens": 300}
+    assert state["runs"][0]["jev"] == {"scored": 3, "cached": 0, "failed": 0, "held": 0, "sampled": 0, "tokens": 300}
 
 
 def test_rank_mode_sends_jev_shortlist_to_llm_and_caches_scores(client, monkeypatch):
@@ -134,13 +134,44 @@ def test_report_compares_jev_with_llm_and_decisions(client, monkeypatch, capsys)
     assert client.put(f"/api/jobs/{jobs[SENIOR['title']]}/decision", json={"status": "saved"}).status_code == 200
     jev_report.main()
     out = capsys.readouterr().out
-    assert "Rank mode would send to the LLM: 2/3 (67%)" in out
-    assert "LLM-strong matches (>= each member's minimum score) kept: 2/3 (67%)" in out
-    assert "Saved or applied postings kept: 0/1 (0%)" in out
+    assert "Rank mode would send to the LLM: 2/3 (67%) of all scored postings" in out
+    assert "LLM-strong matches (>= each member's minimum score) kept: 2/3 (67%, 95% interval 21-94%)" in out
+    assert "Saved or applied postings kept: 0/1 (0%, 95% interval 0-79%)" in out
+    assert "Random sample of postings rank mode would hold, evaluated by the LLM: 0" in out
     # Senior (10, confident) is dropped at every cutoff; GIS (20, uncertain) is always kept.
-    assert "  JEV_MIN_SCORE=20: sends 2/3 (67%), keeps 2/3 (67%) good matches\n" in out
-    assert "  JEV_MIN_SCORE=40: sends 2/3 (67%), keeps 2/3 (67%) good matches (current)" in out
+    assert "  JEV_MIN_SCORE=20: sends 2/3 (67%) of all scored, 2/3 (67%) of evaluated; keeps 2/3 (67%) good matches\n" in out
+    assert "  JEV_MIN_SCORE=40: sends 2/3 (67%) of all scored, 2/3 (67%) of evaluated; keeps 2/3 (67%) good matches (current)" in out
     assert jev_report.spearman([1, 2, 3], [10, 20, 30]) == 1.0
+
+
+def test_held_postings_cannot_stop_the_backlog_being_scored(client, monkeypatch):
+    # One posting scored per search: Senior is held at the front of the queue on
+    # the first search, so the second must score a posting behind it, not rescore it.
+    monkeypatch.setattr(settings, "jev_max_per_run", 1)
+    scores = {SENIOR["title"]: (10, 0.9), JOB["title"]: (80, 0.9), GIS["title"]: (70, 0.9)}
+    jev_calls, llm_calls = search_with(client, monkeypatch, "rank", scores)
+    assert jev_calls == [SENIOR["title"]]
+    client.post("/api/scan")
+    assert len(jev_calls) == 2 and jev_calls[1] != SENIOR["title"]
+    assert client.get("/api/state").json()["runs"][0]["jev"]["cached"] == 1
+
+
+def test_random_sample_of_held_postings_is_evaluated_and_reported(client, monkeypatch, capsys):
+    from career import jev_report
+
+    monkeypatch.setattr(settings, "jev_sample_share", 0.5)
+    scores = {SENIOR["title"]: (80, 0.9), JOB["title"]: (50, 0.9), GIS["title"]: (10, 0.9)}
+    jev_calls, llm_calls = search_with(client, monkeypatch, "shadow", scores, budget=2)
+    # One of two evaluations goes to the only posting rank mode would hold; the other keeps keyword order.
+    assert sorted(llm_calls) == sorted([GIS["title"], SENIOR["title"]])
+    state = client.get("/api/state").json()
+    assert state["runs"][0]["jev"]["sampled"] == 1
+    assert [j["title"] for j in state["jobs"] if j["jev"].get("sample")] == [GIS["title"]]
+    jev_report.main()
+    out = capsys.readouterr().out
+    assert "Evaluated by the LLM in the normal queue: 1;" in out
+    assert "Random sample of postings rank mode would hold, evaluated by the LLM: 1" in out
+    assert "good matches among them: 1/1 (100%, 95% interval 21-100%); about 1 of the 1 held postings may be good matches" in out
 
 
 def test_jev_outage_falls_back_to_keyword_order(client, monkeypatch):

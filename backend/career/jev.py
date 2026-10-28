@@ -92,6 +92,13 @@ def jev_state(profile, job, prefs):
     }
 
 
+def held(jev, job, cutoff=None):
+    """Rank mode's routing rule, shared with the report: a confident low score
+    keeps a posting from automatic LLM evaluation. Manual postings never are."""
+    cutoff = settings.jev_min_score if cutoff is None else cutoff
+    return jev["score"] < cutoff and jev["confidence"] >= settings.jev_confident and job.get("source") != "Manual"
+
+
 def jev_key(state):
     """Cache key: the evidence, posting, preferences, model and rubric scored."""
     payload = json.dumps([state, settings.jev_model, RUBRIC_VERSION], sort_keys=True, ensure_ascii=False)

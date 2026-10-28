@@ -3,6 +3,7 @@ import contextvars
 from datetime import datetime, timezone, timedelta
 import hashlib
 import logging
+import random
 from typing import TypedDict
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 from sqlalchemy.exc import IntegrityError
@@ -13,7 +14,7 @@ from .schemas import Preferences
 from .sources import collect, clean_url, Context
 from .relevance import screen, priority
 from .ai import match_job, write_package, ai_available, KeyRejected
-from .jev import jev_enabled, jev_key, jev_state, score_job
+from .jev import jev_enabled, jev_key, jev_state, held, score_job
 from .auth import plan_limits
 from .notifications import notify, notify_digest, availability as notify_ready
 from .config import settings
@@ -319,15 +320,18 @@ def score_within(deadline, profile, job, prefs):
     return score_job(profile, job, prefs)
 
 
-def jev_stage(db, run, result, candidates, profile, prefs, deadline):
-    """Score the leading candidates with JEV, reusing cached scores, and store
-    each score on its posting. Shadow mode returns the queue unchanged. Rank
-    mode orders it by JEV score and drops confident low scores; postings JEV
-    could not score follow in keyword order, so an outage changes nothing."""
-    leading = candidates[: settings.jev_max_per_run]
-    keys = {r.id: jev_key(jev_state(profile, r.data, prefs)) for r in leading}
-    todo = [r for r in leading if (r.data.get("jev") or {}).get("key") != keys[r.id]]
-    stats = {"scored": 0, "cached": len(leading) - len(todo), "failed": 0, "held": 0, "tokens": 0}
+def jev_stage(db, run, result, candidates, profile, prefs, deadline, budget):
+    """Score candidates with JEV, reusing cached scores, and store each score
+    on its posting. Shadow mode keeps the queue's order. Rank mode orders it by
+    JEV score and drops confident low scores; postings JEV could not score
+    follow in keyword order, so an outage changes nothing. In both modes a few
+    postings rank mode would hold go first, as a random sample for the report."""
+    keys = {r.id: jev_key(jev_state(profile, r.data, prefs)) for r in candidates}
+    stale = [r for r in candidates if (r.data.get("jev") or {}).get("key") != keys[r.id]]
+    # Postings without a current score first, so held postings at the front of
+    # the queue cannot keep the rest of a large backlog from ever being scored.
+    todo = stale[: settings.jev_max_per_run]
+    stats = {"scored": 0, "cached": len(candidates) - len(stale), "failed": 0, "held": 0, "sampled": 0, "tokens": 0}
     if todo:
         result["progress"] = f"Ranking {len(todo)} postings"
         put(db, "run", run.key, result)
@@ -355,24 +359,31 @@ def jev_stage(db, run, result, candidates, profile, prefs, deadline):
                 stats["scored"] += 1
                 stats["tokens"] += scored["tokens"]
     result["jev"] = stats
-    if settings.jev_mode != "rank":
-        return candidates
 
     def current(row):
         jev = row.data.get("jev")
-        return jev if jev and row.id in keys and jev.get("key") == keys[row.id] else None
+        return jev if jev and jev.get("key") == keys[row.id] else None
+
+    holdable = [r for r in candidates if current(r) and held(current(r), r.data)]
+    sample = random.sample(holdable, min(len(holdable), int(budget * settings.jev_sample_share)))
+    for row in sample:
+        put(db, "job", row.key, {**row.data, "jev": {**row.data["jev"], "sample": True}})
+    stats["sampled"] = len(sample)
+    rest = [r for r in candidates if r not in sample]
+    if settings.jev_mode != "rank":
+        return sample + rest
 
     ranked, unscored = [], []
-    for row in candidates:
+    for row in rest:
         jev = current(row)
         if jev is None:
             unscored.append(row)
-        elif jev["score"] < settings.jev_min_score and jev["confidence"] >= settings.jev_confident and row.data.get("source") != "Manual":
+        elif held(jev, row.data):
             stats["held"] += 1
         else:
             ranked.append(row)
     ranked.sort(key=lambda r: -current(r)["score"])
-    return ranked + unscored
+    return sample + ranked + unscored
 
 
 def _run_scan(run_id):
@@ -483,7 +494,7 @@ def _run_scan(run_id):
         verified_profile = profile if any(f.get("verified") for f in profile.get("facts", [])) else None
         # JEV runs before the budget is applied, so it chooses from every candidate, not just the first few.
         if verified_profile and budget and ai_available() and jev_enabled():
-            candidates = jev_stage(db, run, result, candidates, verified_profile, prefs, deadline)
+            candidates = jev_stage(db, run, result, candidates, verified_profile, prefs, deadline, budget)
         batch = candidates[:budget]
         if candidates and budget == 0:
             result.setdefault("warnings", []).append(

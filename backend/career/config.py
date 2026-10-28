@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     # confidence is not sent to the LLM. Uncertain low scores still are.
     jev_min_score: int = 40
     jev_confident: float = 0.6
+    # Share of each search's LLM evaluations (rounded down) spent on a random sample
+    # of postings rank mode would hold, so the report can measure what JEV would miss.
+    jev_sample_share: float = 0.1
     # Comma-separated account emails that use JEV; empty means every account.
     jev_accounts: str = ""
     # Unshortlisted jobs unseen in any feed for this long are archived.
