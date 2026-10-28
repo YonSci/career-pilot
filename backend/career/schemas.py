@@ -90,12 +90,25 @@ class Requirement(BaseModel):
     reason: str
 
 
+class PostingDetails(BaseModel):
+    """What the posting itself states; "not stated" when it is silent, never inferred."""
+    seniority: str
+    experience_years: str
+    work_arrangement: Literal["remote", "hybrid", "on-site", "not stated"]
+    work_authorization: str
+    visa_sponsorship: Literal["offered", "not offered", "not stated"]
+    salary: str
+    contract_duration: str
+
+
 class Match(BaseModel):
     score: int = Field(ge=0, le=100)
     summary: str
     requirements: list[Requirement]
     strengths: list[str]
     gaps: list[str]
+    # Absent on keyword matches and on evaluations made before it was added.
+    details: PostingDetails | None = None
     mode: str = "ai"
 
 

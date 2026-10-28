@@ -72,7 +72,18 @@ type Match = {
     reason: string;
     evidence_ids: string[];
   }[];
+  // What the posting states; "not stated" when it is silent. Missing on older evaluations.
+  details?: null | Record<(typeof POSTING_DETAILS)[number][0], string>;
 };
+const POSTING_DETAILS = [
+  ["seniority", "Seniority"],
+  ["experience_years", "Experience required"],
+  ["work_arrangement", "Work arrangement"],
+  ["work_authorization", "Work authorisation"],
+  ["visa_sponsorship", "Visa sponsorship"],
+  ["salary", "Salary or rate"],
+  ["contract_duration", "Contract length"],
+] as const;
 type Job = {
   id: string;
   title: string;
@@ -2853,6 +2864,20 @@ export default function Home() {
                     <span className="tag">Not a hiring probability</span>
                   </div>
                   <p>{job.match.summary}</p>
+                  {job.match.details && (
+                    <dl className="posting-details">
+                      {POSTING_DETAILS.map(([key, label]) => {
+                        const value = job.match!.details![key];
+                        const unknown = !value || value === "not stated";
+                        return (
+                          <div key={key}>
+                            <dt>{label}</dt>
+                            <dd className={unknown ? "muted-text" : ""}>{unknown ? "Not stated" : value}</dd>
+                          </div>
+                        );
+                      })}
+                    </dl>
+                  )}
                   {job.match.strengths.length > 0 && (
                     <>
                       <h4>Why you fit</h4>
@@ -2863,19 +2888,49 @@ export default function Home() {
                       </ul>
                     </>
                   )}
-                  {job.match.requirements.length > 0 && <h4>Requirements</h4>}
-                  {job.match.requirements.map((r, i) => (
-                    <div className="requirement" key={i}>
-                      <span className={"requirement-status " + r.status}>{r.status.replace("_", " ")}</span>
-                      <div>
-                        <strong>{r.requirement}</strong>
-                        <p>{r.reason}</p>
-                        <small>
-                          {r.mandatory ? "Mandatory" : "Preferred"} {r.evidence_ids.length ? "· Evidence: " + r.evidence_ids.join(", ") : ""}
-                        </small>
+                  {(
+                    [
+                      ["met", "Supported by your evidence", ""],
+                      ["unknown", "Not yet shown in your evidence", "Missing evidence is not a mismatch. If you have this experience, add it under My evidence and re-evaluate."],
+                      ["not_met", "Contradicted by your evidence", ""],
+                    ] as const
+                  ).map(([status, heading, help]) => {
+                    const group = job.match!.requirements.filter((r) => (r.status === "met" || r.status === "not_met" ? r.status : "unknown") === status);
+                    if (!group.length) return null;
+                    return (
+                      <div key={status}>
+                        <h4>
+                          {heading} ({group.length})
+                        </h4>
+                        {help && (
+                          <p className="field-help">
+                            {help}{" "}
+                            <button
+                              className="text-button"
+                              onClick={() => {
+                                setSelected(null);
+                                setTab("profile");
+                              }}
+                            >
+                              Open My evidence
+                            </button>
+                          </p>
+                        )}
+                        {group.map((r, i) => (
+                          <div className="requirement" key={i}>
+                            <span className={"requirement-status " + r.status}>{r.status.replace("_", " ")}</span>
+                            <div>
+                              <strong>{r.requirement}</strong>
+                              <p>{r.reason}</p>
+                              <small>
+                                {r.mandatory ? "Mandatory" : "Preferred"} {r.evidence_ids.length ? "· Evidence: " + r.evidence_ids.join(", ") : ""}
+                              </small>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {job.match.gaps.length > 0 && (
                     <>
                       <h4>Gaps and unknowns</h4>

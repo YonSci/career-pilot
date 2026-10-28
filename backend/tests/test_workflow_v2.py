@@ -257,3 +257,23 @@ def test_application_stages_are_recorded_with_dates(client):
     assert [s["status"] for s in stages] == ["saved", "applied", "interview", "offer"]  # repeats are not recorded
     assert all(s["at"] for s in stages)
     assert client.put(f"/api/jobs/{job_id}/decision", json={"status": "hired"}).status_code == 422
+
+
+def test_match_keeps_the_posting_details_the_model_reports(monkeypatch):
+    from career import ai
+    from career.schemas import Match, PostingDetails
+
+    details = PostingDetails(seniority="Senior", experience_years="7+ years", work_arrangement="remote", work_authorization="not stated",
+                             visa_sponsorship="not stated", salary="USD 450 per day", contract_duration="6 months")
+    seen = {}
+
+    def fake(model, schema, instructions, data, **kw):
+        seen["instructions"] = instructions
+        return Match(score=80, summary="Fit", requirements=[], strengths=[], gaps=[], details=details)
+
+    monkeypatch.setattr(ai, "ai_available", lambda: True)
+    monkeypatch.setattr(ai, "structured", fake)
+    profile = {"facts": [{"id": "F1", "category": "Role", "text": "Climate data lead.", "verified": True}]}
+    match = ai.match_job(profile, JOB, {"keywords": [], "locations": [], "contract_types": []})
+    assert match["details"]["salary"] == "USD 450 per day" and match["details"]["work_arrangement"] == "remote"
+    assert "never infer" in seen["instructions"]

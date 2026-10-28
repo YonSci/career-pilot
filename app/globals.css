@@ -1135,6 +1135,24 @@ h1 {
   gap: 10px;
   margin: 4px 0 6px;
 }
+.posting-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px 18px;
+  margin: 14px 0 4px;
+}
+.posting-details dt {
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #7a8c80;
+}
+.posting-details dd {
+  margin: 2px 0 0;
+  font-size: 13.5px;
+  color: #34483c;
+  overflow-wrap: anywhere;
+}
 .jev-detail {
   border: 1px solid #e1e8ee;
   background: #f7f9fb;
