@@ -137,6 +137,9 @@ def test_report_compares_jev_with_llm_and_decisions(client, monkeypatch, capsys)
     assert "Rank mode would send to the LLM: 2/3 (67%)" in out
     assert "LLM-strong matches (>= each member's minimum score) kept: 2/3 (67%)" in out
     assert "Saved or applied postings kept: 0/1 (0%)" in out
+    # Senior (10, confident) is dropped at every cutoff; GIS (20, uncertain) is always kept.
+    assert "  JEV_MIN_SCORE=20: sends 2/3 (67%), keeps 2/3 (67%) good matches\n" in out
+    assert "  JEV_MIN_SCORE=40: sends 2/3 (67%), keeps 2/3 (67%) good matches (current)" in out
     assert jev_report.spearman([1, 2, 3], [10, 20, 30]) == 1.0
 
 

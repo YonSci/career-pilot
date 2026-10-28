@@ -33,14 +33,22 @@ def spearman(xs, ys):
     return cov / var if var else None
 
 
-def kept(jev):
+# The cutoff sweep counts postings at or above this LLM score as good matches,
+# independent of members' own minimum scores (which few postings reach).
+GOOD_LLM_SCORE = 60
+SWEEP_CUTOFFS = (20, 25, 30, 35, 40)
+
+
+def kept(jev, cutoff=None):
     """Whether rank mode would still send this posting to the LLM."""
-    return jev["score"] >= settings.jev_min_score or jev["confidence"] < settings.jev_confident
+    cutoff = settings.jev_min_score if cutoff is None else cutoff
+    return jev["score"] >= cutoff or jev["confidence"] < settings.jev_confident
 
 
 def main():
     totals = {"scored": 0, "tokens": 0, "kept": 0, "strong": 0, "strong_kept": 0, "chosen": 0, "chosen_kept": 0, "skipped": 0, "skipped_dropped": 0}
     jev_scores, llm_scores = [], []
+    scored, good = [], []
     with Session() as db:
         jobs = db.query(Record).filter_by(kind="job").all()
         min_scores = {}
@@ -54,10 +62,13 @@ def main():
             totals["scored"] += 1
             totals["tokens"] += jev.get("tokens") or 0
             totals["kept"] += kept(jev)
+            scored.append(jev)
             match = row.data.get("match") or {}
             if match.get("mode") == "ai":
                 jev_scores.append(jev["score"])
                 llm_scores.append(match["score"])
+                if match["score"] >= GOOD_LLM_SCORE:
+                    good.append(jev)
                 if match["score"] >= min_scores[row.user_id]:
                     totals["strong"] += 1
                     totals["strong_kept"] += kept(jev)
@@ -80,6 +91,12 @@ def main():
     print(f"LLM-strong matches (>= each member's minimum score) kept: {share(totals['strong_kept'], totals['strong'])}")
     print(f"Saved or applied postings kept: {share(totals['chosen_kept'], totals['chosen'])}")
     print(f"Skipped postings JEV would drop: {share(totals['skipped_dropped'], totals['skipped'])}")
+    print(f"Cutoff sweep (good match = LLM score >= {GOOD_LLM_SCORE}; JEV_CONFIDENT unchanged):")
+    for cut in sorted({*SWEEP_CUTOFFS, settings.jev_min_score}):
+        sends = share(sum(kept(j, cut) for j in scored), len(scored))
+        keeps = share(sum(kept(j, cut) for j in good), len(good))
+        current = " (current)" if cut == settings.jev_min_score else ""
+        print(f"  JEV_MIN_SCORE={cut}: sends {sends}, keeps {keeps} good matches{current}")
     print("Target before switching to rank mode: at least 95% of strong and of saved/applied postings kept.")
 
 
