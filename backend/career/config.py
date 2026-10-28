@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     # "rank": the LLM evaluates postings in JEV order and skips confident low scores.
     jev_mode: Literal["off", "shadow", "rank"] = "off"
     typesafe_api_key: str = ""
+    # Pin a dated model (list them with `python -m career.jev_report --models`) so a provider
+    # update cannot mix old and new scores; changing it rescores postings as they are next ranked.
     jev_model: str = "jev-latest"
     # Postings JEV scores per search; scores are cached per posting, evidence and preferences.
     jev_max_per_run: int = 300
@@ -63,6 +65,9 @@ class Settings(BaseSettings):
     # Share of each search's LLM evaluations (rounded down) spent on a random sample
     # of postings rank mode would hold, so the report can measure what JEV would miss.
     jev_sample_share: float = 0.1
+    # Hard monthly cap on JEV input tokens, all accounts together; 0 = no cap. Once
+    # reached, postings keep keyword order until next month. Set a matching limit with TypeSafe.
+    jev_monthly_tokens: int = 20_000_000
     # Comma-separated account emails that use JEV; empty means every account.
     jev_accounts: str = ""
     # Unshortlisted jobs unseen in any feed for this long are archived.

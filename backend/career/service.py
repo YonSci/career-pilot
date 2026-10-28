@@ -14,7 +14,7 @@ from .schemas import Preferences
 from .sources import collect, clean_url, Context
 from .relevance import screen, priority
 from .ai import match_job, write_package, ai_available, KeyRejected
-from .jev import jev_enabled, jev_key, jev_state, held, score_job
+from .jev import JevCapReached, jev_enabled, jev_key, jev_state, held, score_job
 from .auth import plan_limits
 from .notifications import notify, notify_digest, availability as notify_ready
 from .config import settings
@@ -346,6 +346,11 @@ def jev_stage(db, run, result, candidates, profile, prefs, deadline, budget):
                     scored = future.result()
                 except OutOfTime:
                     continue
+                except JevCapReached:
+                    log.warning("JEV monthly token cap reached; remaining postings keep keyword order")
+                    for pending in futures:
+                        pending.cancel()
+                    break
                 except Exception:
                     log.exception("JEV scoring failed for %s", row.data.get("title"))
                     stats["failed"] += 1

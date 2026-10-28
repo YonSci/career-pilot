@@ -16,7 +16,7 @@ def fake_scores(by_title, calls):
     def score(profile, job, prefs):
         calls.append(job["title"])
         value, confidence = by_title[job["title"]]
-        return {"score": value, "confidence": confidence, "dimensions": {}, "model": "jev-test", "rubric": "1",
+        return {"score": value, "confidence": confidence, "dimensions": {}, "model": "jev-test", "rubric": jev.RUBRIC_VERSION,
                 "key": jev_key(jev_state(profile, job, prefs)), "tokens": 100, "scored": "now"}
     return score
 
@@ -36,7 +36,7 @@ def search_with(client, monkeypatch, mode, by_title, budget=1):
     return jev_calls, llm_calls
 
 
-def test_score_job_combines_weighted_dimensions_and_sends_no_contact_details(monkeypatch):
+def test_score_job_combines_weighted_dimensions_and_sends_no_contact_details(client, monkeypatch):
     sent = {}
     levels = {"experience": 3, "skills": 2, "domain": 0, "seniority": 0, "location": 0, "preferences": 0}
 
@@ -55,15 +55,15 @@ def test_score_job_combines_weighted_dimensions_and_sends_no_contact_details(mon
         {"id": "F3", "category": "Skill", "text": "Unverified claim.", "verified": False},
     ]}
     result = score_job(profile, JOB, {"keywords": ["climate"], "locations": ["Remote"], "contract_types": [], "min_score": 70})
-    # 100 * (0.30 * 3/3 + 0.25 * 2/3) = 46.7
-    assert result["score"] == 47 and result["confidence"] == 0.8 and result["tokens"] == 1234
+    # Evidence dimensions have five levels (0-4): 100 * (0.30 * 3/4 + 0.25 * 2/4) = 35
+    assert result["score"] == 35 and result["confidence"] == 0.8 and result["tokens"] == 1234
     assert result["model"] == "jev-2026-10" and result["key"] == jev_key(sent["state"])
     assert [f["id"] for f in sent["state"]["verified_facts"]] == ["F1"]
     assert "url" not in sent["state"]["job"] and "min_score" not in sent["state"]["preferences"]
     assert set(sent["questions"]) == set(jev.WEIGHTS)
 
 
-def test_score_job_through_the_real_sdk_client(monkeypatch):
+def test_score_job_through_the_real_sdk_client(client, monkeypatch):
     """The SDK builds the request and parses the response; only the network is faked."""
     import json
     import httpx2
@@ -87,9 +87,12 @@ def test_score_job_through_the_real_sdk_client(monkeypatch):
     profile = {"facts": [{"id": "F1", "category": "Role", "text": "Built Python climate pipelines.", "verified": True}]}
     result = score_job(profile, JOB, {"keywords": ["climate"], "locations": ["Remote"], "contract_types": []})
     assert seen["path"] == "/v1/systemone" and seen["body"]["model"] == "jev-latest"
-    assert all(q["type"] == "score" and len(q["criteria"]) == 4 for q in seen["body"]["questions"].values())
-    assert result["score"] == 50 and result["confidence"] == 0.7 and result["tokens"] == 900
-    assert result["dimensions"]["skills"] == {"score": 0.5, "confidence": 0.7}
+    levels = {name: len(q["criteria"]) for name, q in seen["body"]["questions"].items()}
+    assert levels == {"experience": 5, "skills": 5, "domain": 5, "seniority": 5, "location": 4, "preferences": 4}
+    # Level 1.5 is 1.5/4 on the evidence dimensions and 1.5/3 on location and preferences:
+    # 100 * (0.85 * 0.375 + 0.15 * 0.5) = 39.4
+    assert result["score"] == 39 and result["confidence"] == 0.7 and result["tokens"] == 900
+    assert result["dimensions"]["skills"] == {"score": 0.375, "confidence": 0.7}
 
 
 def test_score_job_requires_verified_evidence(monkeypatch):
@@ -132,7 +135,7 @@ def test_report_compares_jev_with_llm_and_decisions(client, monkeypatch, capsys)
     search_with(client, monkeypatch, "shadow", scores, budget=3)
     jobs = {j["title"]: j["id"] for j in client.get("/api/state").json()["jobs"]}
     assert client.put(f"/api/jobs/{jobs[SENIOR['title']]}/decision", json={"status": "saved"}).status_code == 200
-    jev_report.main()
+    jev_report.main([])
     out = capsys.readouterr().out
     assert "Rank mode would send to the LLM: 2/3 (67%) of all scored postings" in out
     assert "LLM-strong matches (>= each member's minimum score) kept: 2/3 (67%, 95% interval 21-94%)" in out
@@ -167,7 +170,7 @@ def test_random_sample_of_held_postings_is_evaluated_and_reported(client, monkey
     state = client.get("/api/state").json()
     assert state["runs"][0]["jev"]["sampled"] == 1
     assert [j["title"] for j in state["jobs"] if j["jev"].get("sample")] == [GIS["title"]]
-    jev_report.main()
+    jev_report.main([])
     out = capsys.readouterr().out
     assert "Evaluated by the LLM in the normal queue: 1;" in out
     assert "Random sample of postings rank mode would hold, evaluated by the LLM: 1" in out
@@ -203,3 +206,42 @@ def test_jev_only_for_listed_accounts_and_with_a_key(client, monkeypatch):
     monkeypatch.setattr(settings, "typesafe_api_key", "")
     client.post("/api/scan")
     assert jev_calls == []
+
+
+def test_monthly_token_cap_stops_scoring(client, monkeypatch):
+    def system_one(state, questions):
+        return SimpleNamespace(scores={n: SimpleNamespace(score=2, confidence=0.8) for n in questions},
+                               model="jev-2026-10", usage=SimpleNamespace(input_tokens=1000))
+
+    monkeypatch.setattr(jev, "client", lambda: SimpleNamespace(system_one=system_one))
+    monkeypatch.setattr(settings, "jev_monthly_tokens", 1500)
+    profile = {"facts": [{"id": "F1", "category": "Role", "text": "Built Python climate pipelines.", "verified": True}]}
+    score_job(profile, JOB, {})
+    score_job(profile, GIS, {})  # 1000 used, under the cap: allowed, and goes over it
+    assert jev.jev_usage()["tokens"] == 2000
+    try:
+        score_job(profile, SENIOR, {})
+    except jev.JevCapReached:
+        pass
+    else:
+        raise AssertionError("expected JevCapReached")
+
+
+def test_backfill_rescores_evaluated_postings_after_a_rubric_change(client, monkeypatch, capsys):
+    from career import jev_backfill, jev_report
+
+    scores = {SENIOR["title"]: (10, 0.9), JOB["title"]: (80, 0.9), GIS["title"]: (20, 0.3)}
+    search_with(client, monkeypatch, "shadow", scores, budget=3)
+    monkeypatch.setattr(jev, "RUBRIC_VERSION", "next")
+    jev_report.main([])
+    assert "Scores from an older rubric, ignored: 3." in capsys.readouterr().out
+    calls = []
+    monkeypatch.setattr("career.jev_backfill.score_job", fake_scores(scores, calls))
+    jev_backfill.main(["2"])
+    assert len(calls) == 2 and "Rescored 2 postings (200 input tokens); 0 failed." in capsys.readouterr().out
+    jev_backfill.main([])
+    jev_backfill.main([])
+    assert len(calls) == 3  # nothing left to rescore the second time
+    jev_report.main([])
+    out = capsys.readouterr().out
+    assert "Postings with a current (rubric next) JEV score: 3" in out and "older rubric" not in out

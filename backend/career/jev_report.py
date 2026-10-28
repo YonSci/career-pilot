@@ -2,12 +2,19 @@
 whether rank mode would drop good postings. Read-only.
 
     python -m career.jev_report          (on Render: Shell tab, from /app)
+    python -m career.jev_report --models (the models the JEV account can use)
+
+Only scores from the current rubric are compared; after a rubric or model
+change, python -m career.jev_backfill rescores postings the LLM evaluated.
 """
 
+import sys
+from collections import Counter
 from .config import settings
 from .db import Session, Record, read
 from .schemas import Preferences
-from .jev import held
+from . import jev as scoring
+from .jev import client, held, jev_usage
 
 
 def ranks(values):
@@ -64,18 +71,29 @@ def share(part, whole, interval=False):
     return text + ")"
 
 
-def main():
+def list_models():
+    for model in client().models.list().models:
+        print(f"{model.name}  released {model.release_date}  {model.description}")
+
+
+def main(argv=None):
+    if "--models" in (sys.argv[1:] if argv is None else argv):
+        return list_models()
     # scored: every JEV-scored posting. evaluated: also evaluated by the LLM in
     # the normal queue. sampled: evaluated because the random sample of postings
     # rank mode would hold picked it; kept apart because it was not chosen by keywords.
     scored, evaluated, sampled, decided = [], [], [], []
-    tokens = 0
+    tokens, older, models = 0, 0, Counter()
     with Session() as db:
         min_scores = {}
         for row in db.query(Record).filter_by(kind="job").all():
             jev = row.data.get("jev")
             if not jev:
                 continue
+            if jev.get("rubric") != scoring.RUBRIC_VERSION:
+                older += 1
+                continue
+            models[jev.get("model")] += 1
             if row.user_id not in min_scores:
                 prefs = {**Preferences().model_dump(), **(read(db, "preferences", {}, user_id=row.user_id) or {})}
                 min_scores[row.user_id] = prefs["min_score"]
@@ -98,7 +116,12 @@ def main():
     rho = spearman([e[0]["score"] for e in evaluated], [e[2] for e in evaluated])
 
     print(f"Thresholds: JEV_MIN_SCORE={settings.jev_min_score}, JEV_CONFIDENT={settings.jev_confident}")
-    print(f"Postings with a JEV score: {len(scored)}, input tokens {tokens}")
+    usage = jev_usage()["tokens"]
+    print(f"JEV input tokens this month: {usage}" + (f" of {settings.jev_monthly_tokens}" if settings.jev_monthly_tokens else " (no cap)"))
+    print(f"Postings with a current (rubric {scoring.RUBRIC_VERSION}) JEV score: {len(scored)}, input tokens {tokens}")
+    print("Models that answered: " + (", ".join(f"{m} ({n})" for m, n in models.most_common()) or "n/a"))
+    if older:
+        print(f"Scores from an older rubric, ignored: {older}. Run python -m career.jev_backfill to rescore evaluated postings.")
     print(f"Rank mode would send to the LLM: {share(count(scored, lambda s: kept(*s)), len(scored))} of all scored postings")
     print(f"Evaluated by the LLM in the normal queue: {len(evaluated)}; rank correlation (Spearman): {'n/a' if rho is None else f'{rho:.2f}'}")
     print(f"LLM-strong matches (>= each member's minimum score) kept: {share(count(strong, lambda e: kept(e[0], e[1])), len(strong), True)}")

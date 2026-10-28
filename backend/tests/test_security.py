@@ -176,7 +176,7 @@ def test_organisation_for_group_analytics(client, monkeypatch):
 
 def test_rejected_key_is_reported_and_failed_calls_are_refunded(client, monkeypatch):
     import httpx
-    from openai import AuthenticationError, APIConnectionError
+    from openai import AuthenticationError, APIConnectionError, RateLimitError
     from career.db import user_scope
     from career.schemas import Match
 
@@ -195,6 +195,13 @@ def test_rejected_key_is_reported_and_failed_calls_are_refunded(client, monkeypa
     owner = {"id": "owner-x", "email": "o@example.org", "role": "admin", "plan": "beta", "openai_key": "", "imap": None, "sponsored": False}
     with user_scope(owner):
         with pytest.raises(ai.KeyRejected, match="OPENAI_API_KEY"):
+            ai.structured("m", Match, "i", {})
+        failure[0] = RateLimitError("You exceeded your current quota", response=httpx.Response(429, request=request), body={"code": "insufficient_quota"})
+        with pytest.raises(ai.KeyRejected, match="no credit left. The owner"):
+            ai.structured("m", Match, "i", {})
+        # An ordinary rate limit is temporary: the posting is retried later, the search goes on.
+        failure[0] = RateLimitError("Rate limit reached", response=httpx.Response(429, request=request), body={"code": "rate_limit_exceeded"})
+        with pytest.raises(RateLimitError):
             ai.structured("m", Match, "i", {})
         failure[0] = APIConnectionError(request=request)
         with pytest.raises(APIConnectionError):
