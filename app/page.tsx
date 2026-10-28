@@ -258,6 +258,7 @@ type State = {
   alerts: Alert[];
   inbox_unread: number;
   telegram: { bot_configured: boolean; linked: boolean; username: string; via_env: boolean };
+  catalog_starter?: boolean;
   source_kinds: Record<string, string>;
   suggested_sources: Suggested[];
 };
@@ -1290,7 +1291,7 @@ export default function Home() {
                       : "No search yet. Add sources, then run your first search."}
             </p>
           )}
-          {(!s.connections.ai || !verified || !s.sources.length) && tab !== "admin" && (
+          {(!s.connections.ai || !verified || (!s.sources.length && !s.catalog_starter)) && tab !== "admin" && (
             <div className="onboarding">
               <div className="onboarding-title">
                 <span className="step-icon">
@@ -1304,7 +1305,7 @@ export default function Home() {
               {[
                 [s.connections.ai, s.connections.ai_sponsored ? "AI included in your seat" : "Add your OpenAI key", () => setTab("account")],
                 [verified > 0, "Verify your CV", () => setTab("profile")],
-                [s.sources.length > 0, "Add job sources", () => setTab("sources")],
+                [s.sources.length > 0, s.catalog_starter ? "Add your own job sources (optional)" : "Add job sources", () => setTab("sources")],
                 ...(s.telegram.bot_configured ? [[s.telegram.linked, "Get alerts on Telegram (optional)", () => setTab("account")]] : []),
               ].map(([done, label, action], i) => (
                 <button key={i} className={done ? "done" : ""} onClick={action as () => void}>
@@ -1458,13 +1459,21 @@ export default function Home() {
                         ? "Try a different title, employer, or location."
                         : filter === "inbox"
                           ? "Matches above your threshold appear here after each search."
-                          : "Add a job you found, or connect job sources. Each role is compared with your verified experience."}
+                          : s.catalog_starter && !s.sources.length
+                            ? "Run search to see recent postings from ReliefWeb and employer boards, each compared with your verified experience. Add your own sources later for boards you follow."
+                            : "Add a job you found, or connect job sources. Each role is compared with your verified experience."}
                     </p>
                     {filter !== "inbox" && (
-                      <button className="button primary" onClick={() => (s.sources.length ? setAddOpen(true) : setTab("sources"))}>
-                        <Plus size={17} />
-                        {s.sources.length ? "Add a job manually" : "Add job sources"}
-                      </button>
+                      s.catalog_starter && !s.sources.length ? (
+                        <button className="button primary" disabled={!!busy || active} onClick={() => act("scan", () => call("/scan", "POST"), "Search started")}>
+                          <RefreshCw size={17} /> Run search
+                        </button>
+                      ) : (
+                        <button className="button primary" onClick={() => (s.sources.length ? setAddOpen(true) : setTab("sources"))}>
+                          <Plus size={17} />
+                          {s.sources.length ? "Add a job manually" : "Add job sources"}
+                        </button>
+                      )
                     )}
                   </div>
                 )}

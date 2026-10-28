@@ -999,6 +999,8 @@ def state(user: User = Depends(auth), db=Depends(db_session)):
         "alerts": alerts,
         "inbox_unread": sum(1 for a in alerts if a.get("channel") == "inapp" and a.get("status") == "unread"),
         "telegram": telegram.link_status(db),
+        # Without sources of their own, searches use recent shared postings (catalog phase 2).
+        "catalog_starter": settings.catalog_enabled and settings.catalog_starter,
         "source_kinds": KIND_LABELS,
         "suggested_sources": SUGGESTED_SOURCES,
     }

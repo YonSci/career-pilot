@@ -15,7 +15,7 @@ from .db import Session, Record, User, put, read, rows, now, user_scope, user_sn
 from .schemas import Preferences
 from .auth import plan_limits
 from .service import run_scan
-from . import telegram
+from . import catalog, telegram
 
 log = logging.getLogger(__name__)
 STALE_AFTER = timedelta(minutes=30)
@@ -57,9 +57,12 @@ def due(db):
     """True when the scoped user's scheduled search should start now."""
     if not (read(db, "schedule", {}) or {}).get("enabled"):
         return False
-    # Nothing to read yet: don't log an empty search every interval.
+    # Nothing to read yet: don't log an empty search every interval. Without
+    # sources of their own, a member with a verified CV searches the shared catalog.
     if not any(s.data.get("enabled") for s in rows(db, "source")):
-        return False
+        profile = read(db, "profile", {}) or {}
+        if not (catalog.starter_on(db) and any(f.get("verified") for f in profile.get("facts", []))):
+            return False
     prefs = {**Preferences().model_dump(), **read(db, "preferences", {})}
     interval = timedelta(hours=prefs.get("scan_interval_hours", 6))
     latest = None

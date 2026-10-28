@@ -392,6 +392,25 @@ def jev_stage(db, run, result, candidates, profile, prefs, deadline, budget):
     return sample + ranked + unscored
 
 
+def take(db, jobs, prefs, ctx):
+    """Keyword-screen fetched postings and store the ones kept. Returns (relevant, added)."""
+    relevant = added = 0
+    for job in jobs:
+        if job.get("partial"):
+            ingest(db, job)
+            continue
+        verdict = screen(job, prefs)
+        if not verdict["keep"]:
+            continue
+        job["screen"] = {k: v for k, v in verdict.items() if k != "keep"}
+        row, created = ingest(db, job)
+        if row is not None and row.data.get("url"):
+            ctx.known_urls.add(row.data["url"])
+        relevant += 1
+        added += int(created)
+    return relevant, added
+
+
 def _run_scan(run_id):
     with Session() as db:
         run = get_row(db, run_id, "run")
@@ -410,7 +429,8 @@ def _run_scan(run_id):
         put(db, "run", run.key, result)
         prefs = {**Preferences().model_dump(), **read(db, "preferences", {})}
         sources = rows(db, "source")
-        if not any(source.data.get("enabled") for source in sources):
+        starter = catalog.starter_on(db)
+        if not starter and not any(source.data.get("enabled") for source in sources):
             result.setdefault("warnings", []).append(
                 "No job sources configured. Add a feed in Job sources, then run a new search."
             )
@@ -447,20 +467,7 @@ def _run_scan(run_id):
                 jobs, mail_ids = collect(source.data, None, ctx)
                 # Before keyword screening, so the catalog also holds postings members' keywords reject.
                 catalog.record(jobs)
-                relevant = added = 0
-                for job in jobs:
-                    if job.get("partial"):
-                        ingest(db, job)
-                        continue
-                    verdict = screen(job, prefs)
-                    if not verdict["keep"]:
-                        continue
-                    job["screen"] = {k: v for k, v in verdict.items() if k != "keep"}
-                    row, created = ingest(db, job)
-                    if row is not None and row.data.get("url"):
-                        ctx.known_urls.add(row.data["url"])
-                    relevant += 1
-                    added += int(created)
+                relevant, added = take(db, jobs, prefs, ctx)
                 for mid in mail_ids:
                     put(db, "mail", "mail:" + mid, {"id": mid})
                 ctx.mail_ids.clear()
@@ -489,6 +496,22 @@ def _run_scan(run_id):
             result.setdefault("warnings", []).append(
                 f"{ctx.skipped_for_budget} posting pages were left for the next search because of the per-run page limit."
             )
+        if starter:
+            # Starter results: no sources of their own, so search what other searches recently found.
+            postings = catalog.starter_postings(db)
+            if postings or catalog.has_postings(db):
+                for job in postings:
+                    job["via"] = "catalog"
+                relevant, added = take(db, postings, prefs, ctx)
+                result["added"] += added
+                result["sources"].append(
+                    {"name": "Recent postings from ReliefWeb and employer boards (shared)", "status": "ok", "received": len(postings), "relevant": relevant, "added": added, "pages": 0}
+                )
+            else:
+                result.setdefault("warnings", []).append(
+                    "No job sources configured, and no recent shared postings yet. Add a feed in Job sources, then run a new search."
+                )
+            put(db, "run", run.key, result.copy())
         # Evaluate the most promising unevaluated postings first, within budget.
         candidates = [
             r for r in rows(db, "job")

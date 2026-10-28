@@ -1,6 +1,8 @@
 # Shared job catalog: design
 
-Status: phase 1 (shadow catalog) implemented in `career/catalog.py`, 29 October 2026. Phases 2 to 4 are proposals.
+Status: phases 1 (shadow catalog) and 2 (starter results) implemented in `career/catalog.py`, 29 October 2026. Phases 3 and 4 are proposals.
+
+Phase 2 as built: "recent" means seen in a source's fetch within the last 7 days (`STARTER_DAYS`) and not past its deadline, an approximation of the retention decision below. Postings the member already has a job for, including skipped ones, are never offered again. Keyword-rejected postings are screened again on each search; nothing is stored for them.
 
 ## Problem
 

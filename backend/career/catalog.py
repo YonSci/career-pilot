@@ -1,8 +1,12 @@
-"""Shared job catalog, phase 1 of docs/CATALOG_DESIGN.md: every posting from
-an approved public source is also stored once under SYSTEM, whichever member
-collected it and whether or not it passed their keywords. Only public facts
-are kept; nothing records who collected a posting. Nothing reads the catalog
-yet. Measure it with:
+"""Shared job catalog (docs/CATALOG_DESIGN.md).
+
+Phase 1: every posting from an approved public source is also stored once
+under SYSTEM, whichever member collected it and whether or not it passed their
+keywords. Only public facts are kept; nothing records who collected a posting.
+
+Phase 2, starter results: a member with no enabled source of their own
+searches the catalog's recent postings instead, through the same keyword
+screen, JEV and evaluation budget as any search. Measure it with:
 
     python -m career.catalog_report      (on Render: Shell tab, from /app)
 """
@@ -11,7 +15,7 @@ import logging
 import threading
 from datetime import datetime, timezone, timedelta
 from .config import settings
-from .db import Record, Session, SYSTEM, now, put, read
+from .db import Record, Session, SYSTEM, now, put, read, rows
 
 log = logging.getLogger(__name__)
 
@@ -20,6 +24,9 @@ log = logging.getLogger(__name__)
 CATALOG_SOURCES = ("ReliefWeb", "Greenhouse", "Lever", "Workable", "SmartRecruiters", "Ashby")
 PUBLIC_FIELDS = ("title", "company", "location", "description", "url", "deadline", "posted", "source", "external_id")
 RETENTION_DAYS = 90
+# Starter results use postings seen in a source's fetch this recently, so a
+# posting that left its board (usually: filled or closed) stops being offered.
+STARTER_DAYS = 7
 
 _lock = threading.Lock()
 _last_purge = {"at": None}
@@ -75,6 +82,31 @@ def record(jobs):
             purge(db)
     except Exception:
         log.exception("Catalog update failed; members' searches are unaffected")
+
+
+def starter_on(db):
+    """Whether the scoped member's searches draw on the catalog: no enabled source of their own."""
+    return settings.catalog_enabled and settings.catalog_starter and not any(s.data.get("enabled") for s in rows(db, "source"))
+
+
+def has_postings(db):
+    return db.query(Record.id).filter_by(user_id=SYSTEM, kind="posting").first() is not None
+
+
+def starter_postings(db):
+    """Recent, open catalog postings the scoped member has no job for yet, newest first."""
+    from .service import expired
+
+    since = (datetime.now(timezone.utc) - timedelta(days=STARTER_DAYS)).isoformat()
+    # A member's job and its catalog posting share the fingerprint in their keys.
+    known = {r.key.removeprefix("job:") for r in rows(db, "job")}
+    found = [
+        r.data
+        for r in db.query(Record).filter_by(user_id=SYSTEM, kind="posting").all()
+        if (r.data.get("last_seen") or "") >= since and not expired(r.data) and r.key.removeprefix("posting:") not in known
+    ]
+    found.sort(key=lambda d: d.get("last_seen") or "", reverse=True)
+    return [{k: d[k] for k in PUBLIC_FIELDS if d.get(k) is not None} for d in found]
 
 
 def purge(db, force=False):

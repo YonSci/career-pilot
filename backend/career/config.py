@@ -76,9 +76,12 @@ class Settings(BaseSettings):
     jev_show: Literal["owner", "all", "off"] = "owner"
     # Comma-separated account emails that use JEV; empty means every account.
     jev_accounts: str = ""
-    # Shared catalog, phase 1: postings from approved public sources are also stored
-    # once under SYSTEM. Nothing reads it yet; false stops writing it.
+    # Shared catalog: postings from approved public sources are also stored once
+    # under SYSTEM; false stops writing and reading it.
     catalog_enabled: bool = True
+    # Phase 2: members without an enabled source of their own search the catalog's
+    # recent postings instead (starter results). Members with sources are unchanged.
+    catalog_starter: bool = True
     # Unshortlisted jobs unseen in any feed for this long are archived.
     archive_after_days: int = 45
     dashboard_dir: Path = Path("dashboard")
