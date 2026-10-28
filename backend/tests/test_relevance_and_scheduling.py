@@ -52,6 +52,10 @@ def test_priority_prefers_title_hits_and_recency():
 
 def test_schedule_due_logic(client, owner_scope):
     with Session() as db:
+        assert not scheduler.due(db)  # on by default, but no source yet
+        put(db, "source", "source:x", {"kind": "greenhouse", "value": "x", "enabled": True})
+        assert scheduler.due(db)
+        put(db, "schedule", "schedule", {"enabled": False})
         assert not scheduler.due(db)
         put(db, "schedule", "schedule", {"enabled": True})
         assert scheduler.due(db)

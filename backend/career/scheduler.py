@@ -57,6 +57,9 @@ def due(db):
     """True when the scoped user's scheduled search should start now."""
     if not (read(db, "schedule", {}) or {}).get("enabled"):
         return False
+    # Nothing to read yet: don't log an empty search every interval.
+    if not any(s.data.get("enabled") for s in rows(db, "source")):
+        return False
     prefs = {**Preferences().model_dump(), **read(db, "preferences", {})}
     interval = timedelta(hours=prefs.get("scan_interval_hours", 6))
     latest = None

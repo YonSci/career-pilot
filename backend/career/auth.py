@@ -241,6 +241,9 @@ def register(db, email, password, name="", invite=None):
     )
     db.add(user)
     db.commit()
+    if plan_limits(user.plan)["schedule"]:
+        # On by default: searches start once the member adds a source (see scheduler.due).
+        put(db, "schedule", "schedule", {"enabled": True}, user_id=user.id)
     if first:
         claim_legacy_records(db, user)
     if invite_row:

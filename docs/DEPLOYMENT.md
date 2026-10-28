@@ -55,6 +55,7 @@ Deleting the service or the disk deletes all accounts' data.
 - CI (`.github/workflows/ci.yml`) runs the backend tests and the dashboard build on every push to `main` and every pull request. Render deploys on push regardless; to deploy only commits that pass, set Render → Settings → Auto-Deploy to **After CI Checks Pass**.
 - A rejected OpenAI key, or an OpenAI account with no credit left (`insufficient_quota`), stops a search's evaluations after the first failure with one warning naming who must act. Ordinary rate limits are retried in later searches.
 - Shared catalog, phase 1 ([CATALOG_DESIGN.md](CATALOG_DESIGN.md)): postings from ReliefWeb and employer job boards are also stored once under the system account, including postings members' keywords reject. Nothing reads them yet. `python -m career.catalog_report` shows its size, sources, and how many postings several members collect. `CATALOG_ENABLED=false` stops it; postings unseen for 90 days are deleted.
+- Scheduled searches are on by default for new members on plans that include them, and start once the member adds a source; accounts without an enabled source are never searched on schedule. `python -m career.schedule_reminder` lists members who have sources but schedules off, with the message they would get; add `--send` to email them (and message them on Telegram if linked). Each member is reminded once.
 - Per-user secrets are encrypted with `SECRET_KEY`. Changing it makes stored keys unreadable; members would re-enter them.
 
 ## Growing past the beta

@@ -152,6 +152,8 @@ def test_scheduler_walks_due_accounts(client, monkeypatch):
 
     member = signup_member(client)
     member.put("/api/schedule", json={"enabled": True})
+    assert scheduler.due_users() == []  # no source yet
+    member.post("/api/sources", json={"kind": "greenhouse", "value": "example"})
     due = scheduler.due_users()
     assert [u["email"] for u in due] == ["member@example.org"]
     ran = []
