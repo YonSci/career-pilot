@@ -14,6 +14,7 @@ from .schemas import Preferences, APPLICATION_STAGES
 from .sources import collect, clean_url, Context
 from .relevance import screen, priority
 from .ai import match_job, write_package, ai_available, KeyRejected
+from . import catalog
 from .jev import JevCapReached, jev_enabled, jev_key, jev_state, held, score_job
 from .auth import plan_limits
 from .notifications import notify, notify_digest, availability as notify_ready
@@ -444,6 +445,8 @@ def _run_scan(run_id):
             fetched_before = ctx.pages_fetched
             try:
                 jobs, mail_ids = collect(source.data, None, ctx)
+                # Before keyword screening, so the catalog also holds postings members' keywords reject.
+                catalog.record(jobs)
                 relevant = added = 0
                 for job in jobs:
                     if job.get("partial"):

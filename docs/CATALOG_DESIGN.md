@@ -1,6 +1,6 @@
 # Shared job catalog: design
 
-Status: proposal, not implemented. Written 29 October 2026.
+Status: phase 1 (shadow catalog) implemented in `career/catalog.py`, 29 October 2026. Phases 2 to 4 are proposals.
 
 ## Problem
 
