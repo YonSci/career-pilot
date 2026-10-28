@@ -12,7 +12,7 @@ import sys
 from collections import Counter
 from .config import settings
 from .db import Session, Record, read
-from .schemas import Preferences
+from .schemas import Preferences, APPLICATION_STAGES
 from . import jev as scoring
 from .jev import client, held, jev_usage
 
@@ -103,7 +103,7 @@ def main(argv=None):
             if match.get("mode") == "ai":
                 entry = (jev, row.data, match["score"], min_scores[row.user_id])
                 (sampled if jev.get("sample") else evaluated).append(entry)
-            if row.data.get("status") in ("saved", "applied", "skipped"):
+            if row.data.get("status") in ("saved", "skipped", *APPLICATION_STAGES):
                 decided.append((jev, row.data))
 
     def count(items, test):
@@ -111,7 +111,9 @@ def main(argv=None):
 
     strong = [e for e in evaluated if e[2] >= e[3]]
     good = [e for e in evaluated if e[2] >= GOOD_LLM_SCORE]
-    chosen = [d for d in decided if d[1]["status"] in ("saved", "applied")]
+    chosen = [d for d in decided if d[1]["status"] in ("saved", *APPLICATION_STAGES)]
+    # The strongest signal: the employer took the application forward.
+    progressed = [d for d in decided if d[1]["status"] in ("interview", "offer")]
     skipped = [d for d in decided if d[1]["status"] == "skipped"]
     rho = spearman([e[0]["score"] for e in evaluated], [e[2] for e in evaluated])
 
@@ -126,6 +128,7 @@ def main(argv=None):
     print(f"Evaluated by the LLM in the normal queue: {len(evaluated)}; rank correlation (Spearman): {'n/a' if rho is None else f'{rho:.2f}'}")
     print(f"LLM-strong matches (>= each member's minimum score) kept: {share(count(strong, lambda e: kept(e[0], e[1])), len(strong), True)}")
     print(f"Saved or applied postings kept: {share(count(chosen, lambda d: kept(*d)), len(chosen), True)}")
+    print(f"Postings that reached interview or offer kept: {share(count(progressed, lambda d: kept(*d)), len(progressed), True)}")
     print(f"Skipped postings JEV would drop: {share(count(skipped, lambda d: not kept(*d)), len(skipped))}")
 
     # Only the random sample shows what JEV would miss among postings the normal

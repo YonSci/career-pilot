@@ -1170,13 +1170,17 @@ def add_job(job: JobInput, db=Depends(db_session)):
 
 
 class Decision(BaseModel):
-    status: Literal["new", "saved", "skipped", "applied", "archived"]
+    status: Literal["new", "saved", "skipped", "archived", "applied", "interview", "offer", "rejected"]
 
 
 @app.put("/api/jobs/{id}/decision", dependencies=[Depends(auth)])
 def decide(id: str, body: Decision, db=Depends(db_session)):
     row = row_or_404(db, id, "job")
-    return job_item(put(db, "job", row.key, {**row.data, "status": body.status}))
+    data = dict(row.data)
+    if data.get("status") != body.status:
+        # Each change is dated, so the pipeline shows when a posting reached each stage.
+        data["stages"] = [*data.get("stages", []), {"status": body.status, "at": now()}]
+    return job_item(put(db, "job", row.key, {**data, "status": body.status}))
 
 
 @app.post("/api/jobs/{id}/match")

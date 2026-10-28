@@ -91,7 +91,24 @@ type Job = {
   match_attempts?: number;
   // Preliminary JEV ranking; present only when the server shows it to this account (JEV_SHOW).
   jev?: Jev;
+  stages?: { status: string; at: string }[];
 };
+// Statuses after applying, in pipeline order.
+const APPLICATION_STAGES: [string, string][] = [
+  ["applied", "Applied"],
+  ["interview", "Interview"],
+  ["offer", "Offer"],
+  ["rejected", "Not selected"],
+];
+const STATUS_LABEL: Record<string, string> = {
+  saved: "Shortlisted",
+  skipped: "Skipped",
+  archived: "Archived",
+  ...Object.fromEntries(APPLICATION_STAGES),
+};
+const inPipeline = (status: string) => status === "saved" || APPLICATION_STAGES.some(([k]) => k === status);
+// When the posting last entered its current status, from the dated history.
+const stageDate = (j: Job) => [...(j.stages ?? [])].reverse().find((x) => x.status === j.status)?.at;
 type Jev = {
   score: number;
   confidence: number;
@@ -976,7 +993,7 @@ export default function Home() {
     .filter((j) => {
       if (filter === "inbox") return unreadIds.has(j.id);
       if (filter === "strong") return (j.match?.score ?? 0) >= prefs.min_score && j.status !== "skipped" && j.status !== "archived";
-      if (filter === "saved") return j.status === "saved" || j.status === "applied";
+      if (filter === "saved") return inPipeline(j.status);
       if (filter === "skipped") return j.status === "skipped" || j.status === "archived";
       return j.status !== "skipped" && j.status !== "archived";
     })
@@ -996,7 +1013,7 @@ export default function Home() {
     act(
       "decision",
       async () => {
-        track(status === "saved" ? "job_saved" : status === "skipped" ? "job_skipped" : status === "applied" ? "job_marked_applied" : "job_status_changed", { score: j.match?.score ?? null, source: j.source });
+        track(status === "saved" ? "job_saved" : status === "skipped" ? "job_skipped" : status === "applied" ? "job_marked_applied" : "job_status_changed", { score: j.match?.score ?? null, source: j.source, status, from: j.status });
         await call(`/jobs/${j.id}/decision`, "PUT", { status });
       },
       "Job updated",
@@ -1360,19 +1377,8 @@ export default function Home() {
                       <p className="job-summary">{j.match?.summary || j.description_preview || "Review this posting and compare it with your verified experience."}</p>
                       <div className="job-footer">
                         <span className="tag">
-                          {j.status === "saved"
-                            ? "Shortlisted"
-                            : j.status === "applied"
-                              ? "Applied"
-                              : j.status === "archived"
-                                ? "Archived"
-                                : j.status === "skipped"
-                                  ? "Skipped"
-                                  : j.match?.mode === "keyword"
-                                    ? "Eligibility not evaluated"
-                                    : j.match
-                                      ? "Your review required"
-                                      : "Awaiting evaluation"}
+                          {STATUS_LABEL[j.status] ??
+                            (j.match?.mode === "keyword" ? "Eligibility not evaluated" : j.match ? "Your review required" : "Awaiting evaluation")}
                         </span>
                         <div>
                           <button className="icon-button" aria-label="Save job" onClick={() => decide(j, j.status === "saved" ? "new" : "saved")}>
@@ -1746,6 +1752,42 @@ export default function Home() {
             </section>
           </TabsContent>
           <TabsContent value="applications">
+            {s.jobs.some((j) => inPipeline(j.status)) && (
+              <section className="panel pipeline">
+                <div className="panel-heading">
+                  <h2>Application pipeline</h2>
+                  <span className="field-help">Move a posting between stages from its detail view.</span>
+                </div>
+                <div className="pipeline-board">
+                  {(
+                    [
+                      ["saved", "Shortlisted", (j: Job) => j.status === "saved" && !s.applications.some((a) => a.job_id === j.id && a.package)],
+                      ["draft", "Draft ready", (j: Job) => j.status === "saved" && s.applications.some((a) => a.job_id === j.id && a.package)],
+                      ...APPLICATION_STAGES.map(([k, l]) => [k, l, (j: Job) => j.status === k] as const),
+                    ] as const
+                  ).map(([key, label, test]) => {
+                    const items = s.jobs.filter(test);
+                    return (
+                      <div className="pipeline-column" key={key}>
+                        <h3>
+                          {label} <span>{items.length}</span>
+                        </h3>
+                        {items.slice(0, 8).map((j) => (
+                          <button className="pipeline-card" key={j.id} onClick={() => setSelected(j.id)}>
+                            <strong>{j.title}</strong>
+                            <small>
+                              {j.company || "Employer not specified"}
+                              {stageDate(j) ? " · " + date(stageDate(j), "") : ""}
+                            </small>
+                          </button>
+                        ))}
+                        {items.length > 8 && <small className="field-help">and {items.length - 8} more</small>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
             {s.applications.length ? (
               <div className="applications-grid">
                 {s.applications.map((a) => (
@@ -2890,9 +2932,27 @@ export default function Home() {
                   {job.posted ? "Posted " + date(job.posted, "") + " · " : ""}
                   {date(job.deadline)}
                 </span>
-                <button className="text-button" onClick={() => decide(job, "applied")}>
-                  Mark applied <Check size={16} />
-                </button>
+                {APPLICATION_STAGES.some(([k]) => k === job.status) ? (
+                  <label className="stage-select">
+                    Stage
+                    <Select value={job.status} onValueChange={(v) => decide(job, v)}>
+                      <SelectTrigger aria-label="Application stage">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {APPLICATION_STAGES.map(([k, l]) => (
+                          <SelectItem key={k} value={k}>
+                            {l}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </label>
+                ) : (
+                  <button className="text-button" onClick={() => decide(job, "applied")}>
+                    Mark applied <Check size={16} />
+                  </button>
+                )}
                 <button className="text-button" onClick={() => decide(job, "skipped")}>
                   Skip <X size={16} />
                 </button>

@@ -12,12 +12,12 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from .config import settings
 from .db import Session, User, put, read, rows, user_scope
-from .schemas import Preferences
+from .schemas import Preferences, APPLICATION_STAGES
 from .jev import JevCapReached, jev_enabled, jev_key, jev_state, score_job
 
 
 def compared(job):
-    return (job.get("match") or {}).get("mode") == "ai" or job.get("status") in ("saved", "applied", "skipped")
+    return (job.get("match") or {}).get("mode") == "ai" or job.get("status") in ("saved", "skipped", *APPLICATION_STAGES)
 
 
 def main(argv=None):

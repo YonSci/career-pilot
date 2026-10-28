@@ -66,6 +66,9 @@ class Preferences(BaseModel):
 # invalidate stored evaluations.
 MATCH_RELEVANT_PREFERENCES = ("keywords", "locations", "contract_types")
 
+# Job statuses after the member applies, in order; "rejected" is shown as "Not selected".
+APPLICATION_STAGES = ("applied", "interview", "offer", "rejected")
+
 
 class JobInput(BaseModel):
     title: str = Field(min_length=2, max_length=240)

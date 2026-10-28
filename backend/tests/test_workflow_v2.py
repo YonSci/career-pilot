@@ -246,3 +246,14 @@ def test_search_suggestion_keeps_only_terms_backed_by_verified_facts(client, mon
     assert r.json() == {"keywords": ["climate data"], "locations": ["Ethiopia", "Remote"], "note": "Climate data roles in Ethiopia or remote."}
     assert all(f["category"].lower() != "contact" for f in seen["data"]["facts"])
     assert client.get("/api/state").json()["preferences"] == before  # nothing saved
+
+
+def test_application_stages_are_recorded_with_dates(client):
+    job_id = client.post("/api/jobs", json=JOB).json()["id"]
+    for status in ("saved", "applied", "interview", "interview", "offer"):
+        r = client.put(f"/api/jobs/{job_id}/decision", json={"status": status})
+        assert r.status_code == 200
+    stages = r.json()["stages"]
+    assert [s["status"] for s in stages] == ["saved", "applied", "interview", "offer"]  # repeats are not recorded
+    assert all(s["at"] for s in stages)
+    assert client.put(f"/api/jobs/{job_id}/decision", json={"status": "hired"}).status_code == 422

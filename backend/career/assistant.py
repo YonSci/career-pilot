@@ -36,6 +36,8 @@ Jobs Find AI is a personal job-search assistant for careers in data science, AI,
 - Each search evaluates up to 50 postings (10 on the Free plan), the most promising first: title matches, preferred locations, newest. Remaining postings wait for the next search. Failed evaluations retry three times, then pause for a day.
 - Changing keywords, locations or contract types, or the verified evidence, re-evaluates stored jobs on the next search. Changing the alert threshold or channels does not.
 - Postings not seen in any feed for 45 days and never shortlisted are archived.
+- Application stages: after marking a posting applied, move it to Interview, Offer or Not selected from the job detail or the pipeline on the Applications tab. Each change is dated. Postings in these stages are no longer evaluated or alerted.
+- Search preferences has "Suggest from my CV": it proposes keywords and locations from verified evidence, fills the form with an Undo, and saves nothing until you save.
 
 # Alerts
 - The in-app inbox ("New" filter and badge) always receives matches at or above the minimum score with no failed mandatory requirement, once per job.

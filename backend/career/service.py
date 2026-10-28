@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import update
 from langgraph.graph import StateGraph, START, END
 from .db import Record, User, Session, put, read, rows, find, get_row, now, current_user, user_scope, user_snapshot
-from .schemas import Preferences
+from .schemas import Preferences, APPLICATION_STAGES
 from .sources import collect, clean_url, Context
 from .relevance import screen, priority
 from .ai import match_job, write_package, ai_available, KeyRejected
@@ -21,7 +21,7 @@ from .config import settings
 from . import telemetry
 
 log = logging.getLogger(__name__)
-CLOSED = ("skipped", "applied", "archived")
+CLOSED = ("skipped", "archived", *APPLICATION_STAGES)
 
 
 def fingerprint(job):

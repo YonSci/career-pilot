@@ -978,6 +978,65 @@ h1 {
   font-size: 14px;
   line-height: 1.8;
 }
+.pipeline {
+  margin-bottom: 23px;
+}
+.pipeline-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.pipeline-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.pipeline-column h3 {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #687c8c;
+  display: flex;
+  justify-content: space-between;
+}
+.pipeline-column h3 span {
+  font-variant-numeric: tabular-nums;
+}
+.pipeline-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  background: #f7f9fb;
+  border: 1px solid #e1e8ee;
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  min-width: 0;
+}
+.pipeline-card:hover,
+.pipeline-card:focus-visible {
+  border-color: #b9c9d6;
+}
+.pipeline-card strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: #27384d;
+  overflow-wrap: anywhere;
+}
+.pipeline-card small {
+  font-size: 11.5px;
+  color: #687c8c;
+}
+.stage-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
 .applications-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
