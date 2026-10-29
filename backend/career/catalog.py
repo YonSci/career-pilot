@@ -5,8 +5,12 @@ under SYSTEM, whichever member collected it and whether or not it passed their
 keywords. Only public facts are kept; nothing records who collected a posting.
 
 Phase 2, starter results: a member with no enabled source of their own
-searches the catalog's recent postings instead, through the same keyword
-screen, JEV and evaluation budget as any search. Measure it with:
+searches the catalog's open postings instead, through the same keyword
+screen, JEV and evaluation budget as any search.
+
+Phase 3 (career/collector.py): with CATALOG_SHARED on, public sources are read
+once for everyone and every member's search draws on the whole catalog.
+Measure it with:
 
     python -m career.catalog_report      (on Render: Shell tab, from /app)
 """
@@ -60,11 +64,20 @@ def record(jobs):
     if not settings.catalog_enabled:
         return
     eligible = [j for j in jobs if j.get("source") in CATALOG_SOURCES and j.get("url") and not j.get("partial")]
-    if not eligible:
+    # Postings a fetch listed but did not read again because the reader already had them.
+    listed = [j for j in jobs if j.get("partial") and j.get("url")]
+    if not eligible and not listed:
         return
     try:
         with _lock, Session() as db:
             stamp = now()
+            sources = {j["source"] for j in eligible}
+            for job in listed:
+                key = posting_key(job)
+                existing = read(db, key, None, user_id=SYSTEM)
+                if existing:
+                    put(db, "posting", key, {**existing, "last_seen": stamp}, user_id=SYSTEM)
+                    sources.add(existing.get("source"))
             for job in eligible:
                 key = posting_key(job)
                 existing = read(db, key, None, user_id=SYSTEM)
@@ -82,7 +95,7 @@ def record(jobs):
                     if read(db, index, None, user_id=SYSTEM) is None:
                         put(db, "posting-body", index, {"key": key}, user_id=SYSTEM)
             # Successful fetches of each source, the clock the retention rule runs on.
-            for source in {j["source"] for j in eligible}:
+            for source in sources - {None}:
                 put(db, "catalog-fetch", "catalog-fetch:" + source, {"at": stamp}, user_id=SYSTEM)
             purge(db)
     except Exception:
@@ -90,8 +103,13 @@ def record(jobs):
 
 
 def starter_on(db):
-    """Whether the scoped member's searches draw on the catalog: no enabled source of their own."""
+    """Whether the scoped member gets starter results: no enabled source of their own."""
     return settings.catalog_enabled and settings.catalog_starter and not any(s.data.get("enabled") for s in rows(db, "source"))
+
+
+def pool_on(db):
+    """Whether the scoped member's search draws on the whole catalog."""
+    return starter_on(db) or (settings.catalog_enabled and settings.catalog_shared)
 
 
 def has_postings(db):
@@ -127,7 +145,7 @@ def unlisted(db, job_keys):
     return found
 
 
-def starter_postings(db):
+def open_postings(db):
     """Open catalog postings, still listed at their source, that the scoped
     member has no job for yet, newest first."""
     from .service import expired

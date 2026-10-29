@@ -55,6 +55,7 @@ from . import public_jobs
 from . import billing
 from . import growth
 from . import channel
+from . import collector
 from . import public_site
 from .ai import server_key_usage
 
@@ -800,6 +801,7 @@ def admin_overview(_: User = Depends(admin), db=Depends(db_session)):
         "payments": billing.payments(db)[:50],
         "pricing": billing.catalog(),
         "channel": {"enabled": channel.enabled(), **{k: v for k, v in channel.state(db).items() if k != "posted"}},
+        "catalog_feeds": feeds_overview(db),
         "totals": {
             "users": len(users),
             "activated": sum(1 for m in metrics if m["activated"]),
@@ -814,6 +816,34 @@ def admin_overview(_: User = Depends(admin), db=Depends(db_session)):
         },
         "plans": accounts.PLANS,
     }
+
+
+def feeds_overview(db):
+    return {"enabled": settings.catalog_enabled, "shared": settings.catalog_shared, "fetch_hours": settings.shared_fetch_hours, **collector.summary(db)}
+
+
+class FeedInput(BaseModel):
+    kind: str = Field(max_length=32)
+    value: str = Field(default="", max_length=500)
+
+
+@app.post("/api/admin/catalog-feeds")
+def admin_add_feed(body: FeedInput, _: User = Depends(admin), db=Depends(db_session)):
+    """Curated shared source: read for everyone, whether or not a member added it."""
+    try:
+        collector.add_curated(db, body.kind, body.value)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return feeds_overview(db)
+
+
+@app.delete("/api/admin/catalog-feeds/{key}")
+def admin_remove_feed(key: str, _: User = Depends(admin), db=Depends(db_session)):
+    try:
+        collector.remove_curated(db, key)
+    except LookupError:
+        raise HTTPException(404, "Not a curated shared source.")
+    return feeds_overview(db)
 
 
 class InviteRequest(BaseModel):

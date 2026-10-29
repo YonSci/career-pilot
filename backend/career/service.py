@@ -9,12 +9,12 @@ from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import update
 from langgraph.graph import StateGraph, START, END
-from .db import Record, User, Session, put, read, rows, find, get_row, now, current_user, user_scope, user_snapshot
+from .db import Record, User, Session, SYSTEM, put, read, rows, find, get_row, now, current_user, user_scope, user_snapshot
 from .schemas import Preferences, APPLICATION_STAGES
 from .sources import collect, clean_url, Context
 from .relevance import screen, priority
 from .ai import match_job, write_package, ai_available, month_key, KeyRejected
-from . import catalog
+from . import catalog, collector
 from .jev import JevCapReached, jev_enabled, jev_key, jev_state, held, score_job
 from .auth import plan_limits
 from .notifications import notify, notify_digest, availability as notify_ready
@@ -463,8 +463,9 @@ def _run_scan(run_id):
         put(db, "run", run.key, result)
         prefs = {**Preferences().model_dump(), **read(db, "preferences", {})}
         sources = rows(db, "source")
-        starter = catalog.starter_on(db)
-        if not starter and not any(source.data.get("enabled") for source in sources):
+        pool = catalog.pool_on(db)
+        shared = settings.catalog_enabled and settings.catalog_shared
+        if not pool and not any(source.data.get("enabled") for source in sources):
             result.setdefault("warnings", []).append(
                 "No job sources configured. Add a feed in Job sources, then run a new search."
             )
@@ -489,6 +490,17 @@ def _run_scan(run_id):
             if not source.data.get("enabled"):
                 continue
             label = source.data["kind"] + (": " + source.data["value"] if source.data.get("value") else "")
+            feed = shared and source.data["kind"] in collector.FEED_KINDS
+            if feed:
+                state = read(db, collector.feed_key(source.data["kind"], source.data.get("value")), {}, user_id=SYSTEM) or {}
+                if collector.fresh(state):
+                    # Read for everyone recently: its postings come from the catalog below.
+                    if source.data.get("deferred_at"):
+                        put(db, "source", source.key, {k: v for k, v in source.data.items() if k != "deferred_at"})
+                    result["sources"].append(
+                        {"name": f"{label} (shared, read {state['last_ok'][11:16]} UTC)", "status": "ok", "received": state.get("received", 0), "relevant": 0, "added": 0, "pages": 0}
+                    )
+                    continue
             if datetime.now(timezone.utc) > deadline:
                 put(db, "source", source.key, {**source.data, "deferred_at": now()})
                 result["sources"].append({"name": label, "status": "deferred", "error": "Skipped: the search's time budget was used up; this source runs first next time."})
@@ -502,6 +514,8 @@ def _run_scan(run_id):
                 jobs, mail_ids = collect(source.data, None, ctx)
                 # Before keyword screening, so the catalog also holds postings members' keywords reject.
                 catalog.record(jobs)
+                if feed:
+                    collector.mark(db, source.data["kind"], source.data.get("value"), True, received=len(jobs))
                 relevant, added = take(db, jobs, prefs, ctx, rejected)
                 for mid in mail_ids:
                     put(db, "mail", "mail:" + mid, {"id": mid})
@@ -526,14 +540,16 @@ def _run_scan(run_id):
                     else "Feed request failed. Check credentials, identifier, and provider availability."
                 )
                 result["sources"].append({"name": label, "status": "failed", "error": message})
+                if feed:
+                    collector.mark(db, source.data["kind"], source.data.get("value"), False, error=message)
             put(db, "run", run.key, result.copy())
         if ctx.skipped_for_budget:
             result.setdefault("warnings", []).append(
                 f"{ctx.skipped_for_budget} posting pages were left for the next search because of the per-run page limit."
             )
-        if starter:
-            # Starter results: no sources of their own, so search what other searches recently found.
-            postings = catalog.starter_postings(db)
+        if pool:
+            # Starter results (no sources of their own) or shared collection: search the whole catalog.
+            postings = catalog.open_postings(db)
             if postings or catalog.has_postings(db):
                 for job in postings:
                     job["via"] = "catalog"

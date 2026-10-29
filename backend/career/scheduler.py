@@ -15,7 +15,7 @@ from .db import Session, Record, User, put, read, rows, now, user_scope, user_sn
 from .schemas import Preferences
 from .auth import plan_limits
 from .service import run_scan
-from . import catalog, telegram
+from . import catalog, collector, telegram
 
 log = logging.getLogger(__name__)
 STALE_AFTER = timedelta(minutes=30)
@@ -162,6 +162,8 @@ class Scheduler:
         from . import channel
 
         self.threads.append(threading.Thread(target=channel.loop, args=(self.stop,), name="career-channel", daemon=True))
+        if settings.catalog_enabled:
+            self.threads.append(threading.Thread(target=collector.loop, args=(self.stop,), name="career-collector", daemon=True))
         for t in self.threads:
             t.start()
 

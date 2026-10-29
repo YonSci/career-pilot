@@ -29,6 +29,7 @@ import {
   MessageCircleQuestion,
   CreditCard,
   Gift,
+  Globe,
   Megaphone,
   Smartphone,
   Sparkles,
@@ -239,6 +240,16 @@ type Pricing = {
   billing_contact: string;
 };
 type BillingInfo = Pricing & { plan_until?: string | null; credits: number; payments: { ref: string; product: string; amount: number; currency: string; provider: string; status: string; created: string; paid_at?: string }[] };
+type CatalogFeeds = {
+  enabled: boolean;
+  shared: boolean;
+  fetch_hours: number;
+  curated: { key: string; kind: string; value: string; members: number; last_ok?: string; last_try?: string; received?: number; error?: string }[];
+  member_feeds: number;
+  member_feeds_read: number;
+  member_feeds_failing: number;
+};
+const FEED_KINDS = ["reliefweb", "greenhouse", "lever", "workable", "smartrecruiters", "ashby"];
 type Referrals = { invites: { code: string; link: string; used: boolean; joined_name?: string | null; joined_at?: string | null }[]; referred: number };
 type EmployerPostRow = { id: string; title: string; company: string; location: string; url: string; deadline?: string | null; contact_name: string; contact_email: string; note: string; status: string; created: string; featured_until?: string };
 type Testimonial = { id: string; name: string; role: string; organisation: string; quote: string };
@@ -281,6 +292,7 @@ type Overview = {
   users: Metrics[];
   invites: { code: string; note: string; created: string; used_by: string | null }[];
   waitlist: { email: string; name: string; note: string; created: string; invited?: string | null; code?: string }[];
+  catalog_feeds?: CatalogFeeds;
   totals: { users: number; activated: number; drafted: number; with_key: number; telegram: number; sponsored?: number; sponsored_seats?: number; sponsored_evaluations_this_month?: number; server_key_calls_this_month?: number; server_key_monthly_cap?: number };
   plans: Record<string, { label: string }>;
   employer_posts?: EmployerPostRow[];
@@ -787,6 +799,8 @@ export default function Home() {
     [overview, setOverview] = useState<Overview | null>(null),
     [inviteCount, setInviteCount] = useState(5),
     [inviteNote, setInviteNote] = useState(""),
+    [feedKind, setFeedKind] = useState("greenhouse"),
+    [feedValue, setFeedValue] = useState(""),
     [newCodes, setNewCodes] = useState<string[]>([]);
   const refresh = useCallback(async () => {
     const data = await call<State>("/state");
@@ -2612,6 +2626,67 @@ export default function Home() {
                               {e.note ? " · " + e.note : ""}
                             </p>
                           </div>
+                        </div>
+                      ))}
+                    </section>
+                  )}
+                  {overview.catalog_feeds?.enabled && (
+                    <section className="panel">
+                      <h2>
+                        <Globe size={18} /> Shared sources
+                      </h2>
+                      <p className="field-help">
+                        {overview.catalog_feeds.shared
+                          ? `Each source is read once for everyone, every ${overview.catalog_feeds.fetch_hours} hours; members' searches use the shared postings.`
+                          : "Shared collection is off (CATALOG_SHARED): members read their own sources. Sources you add here are still read for everyone, so members without sources of their own get their postings."}{" "}
+                        New sources are read within five minutes.
+                      </p>
+                      <p className="field-help">
+                        Members' own sources: {overview.catalog_feeds.member_feeds} distinct
+                        {overview.catalog_feeds.shared ? ` · ${overview.catalog_feeds.member_feeds_read} read recently · ${overview.catalog_feeds.member_feeds_failing} failing` : ""}. They are counted, not listed: a search term can reveal who added it.
+                      </p>
+                      <div className="button-row">
+                        <select value={feedKind} onChange={(e) => setFeedKind(e.target.value)} aria-label="Source type">
+                          {FEED_KINDS.map((k) => (
+                            <option key={k} value={k}>
+                              {s.source_kinds?.[k] ?? k}
+                            </option>
+                          ))}
+                        </select>
+                        <input value={feedValue} onChange={(e) => setFeedValue(e.target.value)} placeholder={feedKind === "reliefweb" ? "Search, e.g. hydrology OR GIS" : "Board identifier, e.g. acme"} aria-label="Source value" />
+                        <button
+                          className="button secondary"
+                          disabled={!!busy || (feedKind !== "reliefweb" && !feedValue.trim())}
+                          onClick={() =>
+                            act("feed-add", async () => {
+                              const feeds = await call<CatalogFeeds>("/admin/catalog-feeds", "POST", { kind: feedKind, value: feedValue });
+                              setOverview({ ...overview, catalog_feeds: feeds });
+                              setFeedValue("");
+                            }, "Shared source added")
+                          }
+                        >
+                          <Plus size={16} /> Add
+                        </button>
+                      </div>
+                      {overview.catalog_feeds.curated.map((f) => (
+                        <div className="run-row" key={f.key}>
+                          <strong>
+                            {s.source_kinds?.[f.kind] ?? f.kind}: {f.value}
+                          </strong>
+                          <span className="field-help">
+                            {f.last_ok ? `Read ${new Date(f.last_ok).toLocaleString()}, ${f.received ?? 0} postings` : "Not read yet"}
+                          </span>
+                          {f.error && <span className="danger-text">{f.error}</span>}
+                          <button
+                            className="text-button"
+                            onClick={() =>
+                              act("feed-" + f.key, async () => {
+                                setOverview({ ...overview, catalog_feeds: await call<CatalogFeeds>(`/admin/catalog-feeds/${encodeURIComponent(f.key)}`, "DELETE") });
+                              })
+                            }
+                          >
+                            Remove <X size={15} />
+                          </button>
                         </div>
                       ))}
                     </section>

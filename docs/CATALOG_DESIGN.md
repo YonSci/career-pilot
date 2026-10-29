@@ -1,10 +1,12 @@
 # Shared job catalog: design
 
-Status: phases 1 (shadow catalog), 2 (starter results) and 4 (keyword-rejected sample) implemented, 29 October 2026. Phase 3 is a proposal.
+Status: all four phases implemented, 29 October 2026. Phase 3 (shared collection) ships switched off: `CATALOG_SHARED=true` turns it on.
 
 Phase 2 as built: starter results offer postings that are not past their deadline and are still listed at their source (the retention rule below). Postings the member already has a job for, including skipped ones, are never offered again. Keyword-rejected postings are screened again on each search; nothing is stored for them.
 
 Retention as built: each successful fetch of a source (ReliefWeb, Greenhouse, ...) is recorded. A posting has left its source once that source has been fetched successfully for 7 days (`GONE_AFTER_DAYS`) without listing it; a pause in fetching never retires anything. Such postings are not offered as starter results, and members' jobs for them are flagged `unlisted_since`: not evaluated, not alerted, shown as "No longer listed" and hidden with closed jobs. The flag clears if the posting is listed again. Limitation: the clock is per source type, not per query or employer board, so a posting only one member's query or board returns is retired a week after that member stops fetching it, or if that one board keeps failing while others of the same type succeed. Text is still deleted after 90 days unseen.
+
+Phase 3 as built (`career/collector.py`): a feed is one distinct ReliefWeb search or employer board. The collector thread reads each due feed every `SHARED_FETCH_HOURS` (default 3) into the catalog: the owner's curated feeds always, members' feeds only with `CATALOG_SHARED=true`. With it on, a member's search skips a feed source read within that interval and takes its postings from the whole catalog; a feed not read recently is read in the member's search, which counts as the shared read, so a newly added source works on the next Run search. Postings already in the catalog come back from a fetch as partial entries and refresh `last_seen` without reading their pages again. The owner sees curated feeds by name and members' feeds only as counts. The collector runs in the in-process scheduler; Celery deployments do not run it.
 
 Phase 4 as built: the sample is drawn from each search's own keyword rejections (catalog and private sources alike), one per search and `KEYWORD_SAMPLE_PER_MONTH` per member, and is LLM-evaluated ahead of JEV so the comparison does not depend on JEV. JEV scoring of the sample is left out; `jev_report` keeps it out of the JEV comparison.
 

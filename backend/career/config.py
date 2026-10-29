@@ -82,6 +82,12 @@ class Settings(BaseSettings):
     # Phase 2: members without an enabled source of their own search the catalog's
     # recent postings instead (starter results). Members with sources are unchanged.
     catalog_starter: bool = True
+    # Phase 3: ReliefWeb searches and employer boards are read once for everyone by
+    # the shared collector; members' searches skip a source read in the last
+    # SHARED_FETCH_HOURS and draw on the whole catalog. Off: members fetch their
+    # own sources as before (the owner's curated shared sources are read either way).
+    catalog_shared: bool = False
+    shared_fetch_hours: float = 3
     # Phase 4: per member and month, this many postings their keywords rejected
     # (at most one per search) are stored and evaluated anyway, so jev_report can
     # show whether keywords miss good jobs. Taken from the search's evaluation

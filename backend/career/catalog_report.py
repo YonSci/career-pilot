@@ -7,6 +7,8 @@ from collections import Counter
 from datetime import datetime, timezone, timedelta
 from .db import Record, Session, SYSTEM
 from .catalog import is_gone, last_fetches
+from .collector import summary as feed_summary
+from .config import settings
 
 
 def main():
@@ -18,6 +20,15 @@ def main():
         members = Counter(r.key.removeprefix("job:") for r in jobs)
         starter = [r for r in jobs if r.data.get("via") == "catalog"]
         fetches = last_fetches(db)
+        feeds = feed_summary(db)
+    curated = feeds["curated"]
+    print(f"Shared sources: {len(curated)} curated by the owner, {feeds['member_feeds']} distinct members' sources; "
+          f"shared collection {'on' if settings.catalog_shared else 'off (members read their own; curated ones are read for everyone)'}")
+    if settings.catalog_shared:
+        print(f"  members' sources read in the last {settings.shared_fetch_hours:g} hours: {feeds['member_feeds_read']}, failing: {feeds['member_feeds_failing']}")
+    for f in curated:
+        if f.get("error"):
+            print(f"  failing: {f['kind']} {f['value'][:60]}: {f['error']}")
     if not postings:
         print("The catalog is empty. It fills as members' searches read ReliefWeb and employer job boards.")
         return
