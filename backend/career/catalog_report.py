@@ -6,6 +6,7 @@
 from collections import Counter
 from datetime import datetime, timezone, timedelta
 from .db import Record, Session, SYSTEM
+from .catalog import is_gone, last_fetches
 
 
 def main():
@@ -16,6 +17,7 @@ def main():
         jobs = db.query(Record).filter(Record.kind == "job", Record.user_id != SYSTEM).all()
         members = Counter(r.key.removeprefix("job:") for r in jobs)
         starter = [r for r in jobs if r.data.get("via") == "catalog"]
+        fetches = last_fetches(db)
     if not postings:
         print("The catalog is empty. It fills as members' searches read ReliefWeb and employer job boards.")
         return
@@ -23,6 +25,8 @@ def main():
     fresh = sum(1 for r in postings if (r.data.get("last_seen") or "") >= week_ago)
     size = sum(len(r.data.get("description") or "") for r in postings)
     print(f"Catalog postings: {len(postings)} ({fresh} seen in the last 7 days), descriptions {size / 1e6:.1f} MB")
+    gone = sum(1 for r in postings if is_gone(r.data, fetches))
+    print(f"No longer listed at their source (retention rule): {gone}; last successful fetch: " + (", ".join(f"{s} {a[:16]}" for s, a in sorted(fetches.items())) or "none recorded yet"))
     print("By source: " + ", ".join(f"{s} {n}" for s, n in Counter(r.data.get("source") for r in postings).most_common()))
     print(f"Kept by no member (rejected by everyone's keywords): {held.count(0)}")
     print(f"Kept by one member: {held.count(1)}; by two or more: {sum(1 for h in held if h >= 2)} (most: {max(held)})")

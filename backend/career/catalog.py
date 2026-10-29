@@ -24,9 +24,11 @@ log = logging.getLogger(__name__)
 CATALOG_SOURCES = ("ReliefWeb", "Greenhouse", "Lever", "Workable", "SmartRecruiters", "Ashby")
 PUBLIC_FIELDS = ("title", "company", "location", "description", "url", "deadline", "posted", "source", "external_id")
 RETENTION_DAYS = 90
-# Starter results use postings seen in a source's fetch this recently, so a
-# posting that left its board (usually: filled or closed) stops being offered.
-STARTER_DAYS = 7
+# Retention: a posting has left its source (usually filled or closed) once its
+# source has been fetched successfully for this long without listing it.
+# Measured against the source's own fetches, so a pause in searching never
+# retires postings. Starter results, evaluations and alerts skip such postings.
+GONE_AFTER_DAYS = 7
 
 _lock = threading.Lock()
 _last_purge = {"at": None}
@@ -79,6 +81,9 @@ def record(jobs):
                     index = "posting-body:" + body_hash(job.get("description") or "")
                     if read(db, index, None, user_id=SYSTEM) is None:
                         put(db, "posting-body", index, {"key": key}, user_id=SYSTEM)
+            # Successful fetches of each source, the clock the retention rule runs on.
+            for source in {j["source"] for j in eligible}:
+                put(db, "catalog-fetch", "catalog-fetch:" + source, {"at": stamp}, user_id=SYSTEM)
             purge(db)
     except Exception:
         log.exception("Catalog update failed; members' searches are unaffected")
@@ -93,17 +98,47 @@ def has_postings(db):
     return db.query(Record.id).filter_by(user_id=SYSTEM, kind="posting").first() is not None
 
 
+def last_fetches(db):
+    """Source name -> time of its latest successful fetch."""
+    return {r.key.removeprefix("catalog-fetch:"): r.data.get("at") for r in db.query(Record).filter_by(user_id=SYSTEM, kind="catalog-fetch").all()}
+
+
+def is_gone(posting, fetches):
+    """Whether the posting's source has gone GONE_AFTER_DAYS of successful fetches without listing it."""
+    fetched, seen = fetches.get(posting.get("source")), posting.get("last_seen")
+    if not (fetched and seen):
+        return False
+    return datetime.fromisoformat(fetched) - datetime.fromisoformat(seen) >= timedelta(days=GONE_AFTER_DAYS)
+
+
+def unlisted(db, job_keys):
+    """Of these member job keys, the ones whose catalog posting has left its
+    source, mapped to when it was last listed. Jobs from sources outside the
+    catalog are never included."""
+    if not settings.catalog_enabled:
+        return {}
+    fetches = last_fetches(db)
+    keys = ["posting:" + k.removeprefix("job:") for k in job_keys]
+    found = {}
+    for i in range(0, len(keys), 500):  # SQLite caps the number of bound parameters
+        for r in db.query(Record).filter(Record.user_id == SYSTEM, Record.kind == "posting", Record.key.in_(keys[i:i + 500])).all():
+            if is_gone(r.data, fetches):
+                found["job:" + r.key.removeprefix("posting:")] = r.data["last_seen"]
+    return found
+
+
 def starter_postings(db):
-    """Recent, open catalog postings the scoped member has no job for yet, newest first."""
+    """Open catalog postings, still listed at their source, that the scoped
+    member has no job for yet, newest first."""
     from .service import expired
 
-    since = (datetime.now(timezone.utc) - timedelta(days=STARTER_DAYS)).isoformat()
+    fetches = last_fetches(db)
     # A member's job and its catalog posting share the fingerprint in their keys.
     known = {r.key.removeprefix("job:") for r in rows(db, "job")}
     found = [
         r.data
         for r in db.query(Record).filter_by(user_id=SYSTEM, kind="posting").all()
-        if (r.data.get("last_seen") or "") >= since and not expired(r.data) and r.key.removeprefix("posting:") not in known
+        if not is_gone(r.data, fetches) and not expired(r.data) and r.key.removeprefix("posting:") not in known
     ]
     found.sort(key=lambda d: d.get("last_seen") or "", reverse=True)
     return [{k: d[k] for k in PUBLIC_FIELDS if d.get(k) is not None} for d in found]

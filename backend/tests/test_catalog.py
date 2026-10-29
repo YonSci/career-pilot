@@ -99,7 +99,10 @@ def test_members_without_sources_get_starter_results_from_the_catalog(client, mo
     fresh = {**JOB, "source": "ReliefWeb", "url": "https://example.org/jobs/fresh"}
     put_posting(fresh)
     put_posting({**JOB, "source": "Greenhouse", "url": "https://example.org/jobs/cleaner", "title": "Office cleaner", "description": "Cleaning offices daily."})
-    put_posting({**JOB, "source": "Greenhouse", "url": "https://example.org/jobs/stale"}, days_ago=catalog.STARTER_DAYS + 1)
+    # Greenhouse was fetched today without listing this one for over a week: it has left its source.
+    put_posting({**JOB, "source": "Greenhouse", "url": "https://example.org/jobs/stale"}, days_ago=catalog.GONE_AFTER_DAYS + 1)
+    with Session() as db:
+        put(db, "catalog-fetch", "catalog-fetch:Greenhouse", {"at": datetime.now(timezone.utc).isoformat()}, user_id=SYSTEM)
     put_posting({**JOB, "source": "Greenhouse", "url": "https://example.org/jobs/closed", "deadline": "2020-01-01"})
 
     member = signup_member(client)
@@ -152,3 +155,52 @@ def test_scheduled_starter_searches_need_a_verified_cv(client, monkeypatch):
     assert is_due("member@example.org") is True
     monkeypatch.setattr(settings, "catalog_starter", False)
     assert is_due("member@example.org") is False
+
+
+# --- retention: postings that left their source --------------------------------
+
+
+def test_postings_missing_from_a_week_of_fetches_are_not_evaluated_or_alerted(client, monkeypatch, capsys):
+    from tests.test_jev import LLM_MATCH
+    from tests.test_workflow import verified_profile
+
+    verified_profile(client)
+    prefs = client.get("/api/state").json()["preferences"]
+    client.put("/api/preferences", json={**prefs, "alerts_enabled": True, "notify_channels": []})
+    listed = {**JOB, "source": "ReliefWeb", "url": "https://example.org/jobs/listed"}
+    gone = {**JOB, "source": "ReliefWeb", "url": "https://example.org/jobs/gone", "title": "Climate Data Scientist II"}
+    # Both were collected a while ago and never evaluated; since then only one is still listed.
+    monkeypatch.setattr("career.service.collect", lambda *a, **k: ([listed, gone], []))
+    client.post("/api/sources", json={"kind": "reliefweb", "value": "climate"})
+    monkeypatch.setattr(settings, "max_matches_per_run", 0)
+    client.post("/api/scan")
+    old = (datetime.now(timezone.utc) - timedelta(days=catalog.GONE_AFTER_DAYS + 1)).isoformat()
+    with Session() as db:
+        row = db.query(Record).filter_by(user_id=SYSTEM, key=catalog.posting_key(gone)).one()
+        put(db, "posting", row.key, {**row.data, "last_seen": old}, user_id=SYSTEM)
+    # Today's fetch lists only the first: the second is not evaluated, alerted or offered.
+    monkeypatch.setattr("career.service.collect", lambda *a, **k: ([listed], []))
+    monkeypatch.setattr(settings, "max_matches_per_run", 5)
+    monkeypatch.setattr(settings, "openai_api_key", "fake-test-key")
+    calls = []
+    monkeypatch.setattr("career.service.match_job", lambda profile, job, prefs: calls.append(job["url"]) or LLM_MATCH)
+    client.post("/api/scan")
+    assert calls == [listed["url"]]
+    state = client.get("/api/state").json()
+    jobs = {j["url"]: j for j in state["jobs"]}
+    assert jobs[gone["url"]]["unlisted_since"] == old and "unlisted_since" not in jobs[listed["url"]]
+    assert state["runs"][0]["alerts"] == 1
+    catalog_report.main()
+    assert "No longer listed at their source (retention rule): 1" in capsys.readouterr().out
+    # Listed again: the flag clears.
+    monkeypatch.setattr("career.service.collect", lambda *a, **k: ([listed, gone], []))
+    client.post("/api/scan")
+    assert "unlisted_since" not in {j["url"]: j for j in client.get("/api/state").json()["jobs"]}[gone["url"]]
+
+
+def test_a_pause_in_fetching_never_retires_postings(client):
+    stale = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    posting = {"source": "ReliefWeb", "last_seen": stale}
+    assert catalog.is_gone(posting, {}) is False  # source never fetched since
+    assert catalog.is_gone(posting, {"ReliefWeb": stale}) is False  # fetched last when it was listed
+    assert catalog.is_gone(posting, {"ReliefWeb": datetime.now(timezone.utc).isoformat()}) is True

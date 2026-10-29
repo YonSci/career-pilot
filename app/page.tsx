@@ -87,6 +87,7 @@ const POSTING_DETAILS = [
 type Job = {
   id: string;
   keyword_sample?: boolean;
+  unlisted_since?: string;
   title: string;
   company: string;
   location: string;
@@ -1051,7 +1052,7 @@ export default function Home() {
       if (filter === "skipped") return j.status === "skipped" || j.status === "archived";
       return j.status !== "skipped" && j.status !== "archived";
     })
-    .filter((j) => !hideExpired || !j.expired || filter === "saved")
+    .filter((j) => !hideExpired || !(j.expired || j.unlisted_since) || filter === "saved")
     .filter((j) =>
       `${j.title} ${j.company} ${j.location} ${j.source}`.toLowerCase().includes(query.toLowerCase()),
     )
@@ -1425,8 +1426,8 @@ export default function Home() {
                         <span>{j.source}</span>
                         {j.keyword_sample && <span>Outside your keywords</span>}
                         {j.posted && <span>Posted {date(j.posted, "")}</span>}
-                        <span className={j.expired ? "danger-text" : ""}>
-                          {j.expired ? "Closed · " : ""}
+                        <span className={j.expired || j.unlisted_since ? "danger-text" : ""}>
+                          {j.expired ? "Closed · " : j.unlisted_since ? "No longer listed · " : ""}
                           {date(j.deadline)}
                         </span>
                       </div>
@@ -2886,6 +2887,11 @@ export default function Home() {
                 </button>
               </div>
               {job.expired && <p className="danger-text">The listed deadline has passed.</p>}
+              {!job.expired && job.unlisted_since && (
+                <p className="danger-text">
+                  No longer listed at {job.source} since {new Date(job.unlisted_since).toLocaleDateString()}: it has probably closed or been filled. Check the employer's page before applying.
+                </p>
+              )}
               {job.keyword_sample && (
                 <p className="field-help">
                   Outside your keywords: picked at random to check whether your keywords miss good jobs. It is evaluated like any other posting but never sent as an alert. If it fits, consider adding a keyword under Preferences.

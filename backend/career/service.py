@@ -290,6 +290,7 @@ def alertable(data, prefs):
         and match["score"] >= prefs["min_score"]
         and data.get("status") not in CLOSED
         and not expired(data)
+        and not data.get("unlisted_since")
         and not data.get("keyword_sample")
         and not any(r["mandatory"] and r["status"] == "not_met" for r in match.get("requirements", []))
     )
@@ -415,6 +416,19 @@ def take(db, jobs, prefs, ctx, rejected=None):
     return relevant, added
 
 
+def mark_unlisted(db):
+    """Flag the scoped member's jobs whose posting has left its source (catalog
+    retention rule), and clear the flag on any that are listed again."""
+    jobs = rows(db, "job")
+    gone = catalog.unlisted(db, [r.key for r in jobs])
+    for r in jobs:
+        since = gone.get(r.key)
+        if since and r.data.get("unlisted_since") != since:
+            put(db, "job", r.key, {**r.data, "unlisted_since": since})
+        elif not since and r.data.get("unlisted_since"):
+            put(db, "job", r.key, {k: v for k, v in r.data.items() if k != "unlisted_since"})
+
+
 def keyword_sample(db, rejected):
     """Store one posting the keywords rejected, within the member's monthly
     sample quota, so it is evaluated like any other. Returns its key or None."""
@@ -533,6 +547,7 @@ def _run_scan(run_id):
                     "No job sources configured, and no recent shared postings yet. Add a feed in Job sources, then run a new search."
                 )
             put(db, "run", run.key, result.copy())
+        mark_unlisted(db)
         budget = evaluation_budget(db)
         verified_profile = profile if any(f.get("verified") for f in profile.get("facts", [])) else None
         sample_key = None
@@ -543,6 +558,7 @@ def _run_scan(run_id):
             r for r in rows(db, "job")
             if r.data.get("status") not in CLOSED
             and not expired(r.data)
+            and not r.data.get("unlisted_since")
             and needs_evaluation(r.data)
             and not in_backoff(r.data)
         ]
