@@ -14,7 +14,7 @@ from .schemas import Preferences, APPLICATION_STAGES
 from .sources import collect, clean_url, Context, failure_message
 from .relevance import screen, priority
 from .ai import match_job, write_package, ai_available, month_key, KeyRejected
-from . import catalog, collector
+from . import catalog, collector, growth
 from .jev import JevCapReached, jev_enabled, jev_key, jev_state, held, score_job
 from .auth import plan_limits
 from .notifications import notify, notify_digest, availability as notify_ready
@@ -416,6 +416,24 @@ def take(db, jobs, prefs, ctx, rejected=None):
     return relevant, added
 
 
+def take_featured(db, jobs, prefs, ctx):
+    """Like take, for featured employer listings: each listing's matches count
+    goes up the first time this member's keywords keep it. Counts only; the
+    employer never learns who matched."""
+    from .employers import count
+
+    relevant = added = 0
+    for job in jobs:
+        job["url"] = clean_url(job["url"])
+        key = "job:" + fingerprint(job)
+        before = find(db, key)
+        kept, new = take(db, [job], prefs, ctx)
+        relevant, added = relevant + kept, added + new
+        if kept and find(db, key) and not (before and before.data.get("featured_post")):
+            count(db, job["featured_post"], "matches")
+    return relevant, added
+
+
 def mark_unlisted(db):
     """Flag the scoped member's jobs whose posting has left its source (catalog
     retention rule), and clear the flag on any that are listed again."""
@@ -563,6 +581,11 @@ def _run_scan(run_id):
                     "No job sources configured, and no recent shared postings yet. Add a feed in Job sources, then run a new search."
                 )
             put(db, "run", run.key, result.copy())
+        featured = growth.member_postings(db)
+        if featured:
+            relevant, added = take_featured(db, featured, prefs, ctx)
+            result["added"] += added
+            result["sources"].append({"name": "Featured employer listings", "status": "ok", "received": len(featured), "relevant": relevant, "added": added, "pages": 0})
         mark_unlisted(db)
         budget = evaluation_budget(db)
         verified_profile = profile if any(f.get("verified") for f in profile.get("facts", [])) else None

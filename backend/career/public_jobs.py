@@ -185,6 +185,9 @@ def compute(db):
         posted = _parse(p.get("posted")) or _parse(p.get("created")) or now
         job = _public(p, posted, featured=True)
         job["source"] = "Featured employer"
+        job["post_id"] = p["id"]
+        # Apply clicks go through /go/<id> so the employer sees how many there were.
+        job["apply_url"] = settings.public_url.rstrip("/") + "/go/" + p["id"]
         key = (p.get("url") or "").lower().rstrip("/")
         seen.pop(key, None)
         sponsored.append({"job": job, "posted": posted, "interest": 10**6, "created": posted})

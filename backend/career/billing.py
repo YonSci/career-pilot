@@ -7,7 +7,9 @@ Three ways to pay, chosen by what is configured:
   receives an email, collects the money (Telebirr, bank transfer) and activates the
   purchase in the Cohort tab.
 
-A purchase is a system record (kind "payment"). Applying it is idempotent."""
+A purchase is a system record (kind "payment"). Applying it is idempotent.
+Employers buy a featured listing the same way, without a member account: the
+payer is the listing's contact and the payment carries the listing's id."""
 
 import hashlib
 import hmac
@@ -29,6 +31,7 @@ PRODUCTS = {
     "pro_plus": {"label": "Pro Plus, one month", "plan": "pro_plus", "days": PLAN_DAYS},
     "package": {"label": "1 application package", "credits": 1},
     "package_5": {"label": "5 application packages", "credits": 5},
+    "featured_listing": {"label": "Featured listing, 14 days", "listing": True},
 }
 
 
@@ -42,13 +45,15 @@ def price(product, currency):
         return settings.price_package_etb if etb else settings.price_package_usd
     if product == "package_5":
         return (settings.price_package_etb if etb else settings.price_package_usd) * 4
+    if product == "featured_listing":
+        return settings.featured_listing_etb if etb else settings.featured_listing_usd
     raise ValueError("Unknown product.")
 
 
 def gateways():
     return {
         "chapa": bool(settings.chapa_secret_key),
-        "lemon": bool(settings.lemon_checkout_pro or settings.lemon_checkout_pro_plus or settings.lemon_checkout_package),
+        "lemon": bool(settings.lemon_checkout_pro or settings.lemon_checkout_pro_plus or settings.lemon_checkout_package or settings.lemon_checkout_featured),
         "manual": True,
     }
 
@@ -110,10 +115,18 @@ def apply_purchase(db, ref, provider_ref=None):
         raise ValueError("Unknown payment reference.")
     if data.get("status") == "paid":
         return data
+    product = PRODUCTS[data["product"]]
+    if product.get("listing"):
+        from .growth import activate_employer_post
+
+        activate_employer_post(db, data["post_id"], ref)
+        data = {**data, "status": "paid", "paid_at": now(), "provider_ref": provider_ref}
+        put(db, "payment", _payment_key(ref), data, user_id=SYSTEM)
+        telemetry.capture("server_purchase", {"product": data["product"], "currency": data["currency"], "amount": data["amount"], "provider": data["provider"]}, distinct_id="employer")
+        return data
     user = db.get(User, data["user_id"])
     if not user:
         raise ValueError("The paying account no longer exists.")
-    product = PRODUCTS[data["product"]]
     user_settings = dict(user.settings or {})
     if "plan" in product:
         current_until = _parse(user_settings.get("plan_until"))
@@ -162,26 +175,27 @@ def plan_status(user):
 # --- checkout --------------------------------------------------------------------
 
 
-def start_checkout(db, user, product, currency):
+def start_checkout(db, user, product, currency, extra=None):
+    """user: the paying member, or for a featured listing its contact (id None)."""
     if product not in PRODUCTS:
         raise ValueError("Unknown product.")
     currency = (currency or "ETB").upper()
     if currency not in ("ETB", "USD"):
         raise ValueError("Currency must be ETB or USD.")
     if currency == "ETB" and settings.chapa_secret_key:
-        return chapa_checkout(db, user, product)
+        return chapa_checkout(db, user, product, extra)
     if currency == "USD":
-        link = {"pro": settings.lemon_checkout_pro, "pro_plus": settings.lemon_checkout_pro_plus, "package": settings.lemon_checkout_package, "package_5": settings.lemon_checkout_package}.get(product)
+        link = {"pro": settings.lemon_checkout_pro, "pro_plus": settings.lemon_checkout_pro_plus, "package": settings.lemon_checkout_package, "package_5": settings.lemon_checkout_package, "featured_listing": settings.lemon_checkout_featured}.get(product)
         if link:
-            payment = new_payment(db, user, product, "USD", "lemonsqueezy")
+            payment = new_payment(db, user, product, "USD", "lemonsqueezy", extra)
             sep = "&" if "?" in link else "?"
-            url = link + sep + urlencode({"checkout[custom][ref]": payment["ref"], "checkout[custom][user_id]": user.id, "checkout[email]": user.email})
+            url = link + sep + urlencode({"checkout[custom][ref]": payment["ref"], "checkout[custom][user_id]": user.id or "", "checkout[email]": user.email})
             return {"mode": "redirect", "provider": "lemonsqueezy", "url": url, "ref": payment["ref"]}
-    return manual_request(db, user, product, currency)
+    return manual_request(db, user, product, currency, extra)
 
 
-def chapa_checkout(db, user, product):
-    payment = new_payment(db, user, product, "ETB", "chapa")
+def chapa_checkout(db, user, product, extra=None):
+    payment = new_payment(db, user, product, "ETB", "chapa", extra)
     base = settings.public_url.rstrip("/")
     body = {
         "amount": str(payment["amount"]),
@@ -249,10 +263,10 @@ def lemon_webhook(db, raw_body: bytes, signature: str):
     return apply_purchase(db, ref, provider_ref=str((payload.get("data") or {}).get("id")))
 
 
-def manual_request(db, user, product, currency):
+def manual_request(db, user, product, currency, extra=None):
     from .notifications import email_send
 
-    payment = new_payment(db, user, product, currency, "manual", {"status": "requested"})
+    payment = new_payment(db, user, product, currency, "manual", {**(extra or {}), "status": "requested"})
     contact = settings.billing_contact or settings.email_from or "the owner"
     owner_email = settings.email_to or settings.email_from
     if settings.smtp_host and settings.email_from and owner_email:

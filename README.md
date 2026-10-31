@@ -103,7 +103,7 @@ Provider acceptance is not delivery confirmation. An alert is recorded before se
 - `INVITE_ONLY=true` (default): new accounts need a code from the Cohort tab, except that up to `OPEN_SEATS_PER_DAY` (default 25) people a day can join without one. Set `INVITE_ONLY=false` to open sign-up.
 - `SECRET_KEY` encrypts stored API keys and mailbox passwords (defaults to `APP_TOKEN`). Changing it invalidates them.
 - Plans (`backend/career/auth.py`): Free, Beta (own OpenAI key), Beta with AI included (the first `SPONSORED_SEATS` members, on the server's key within `SERVER_KEY_MONTHLY_CALLS`), Pro and Pro Plus. The owner can change plans and sponsor seats in the Cohort tab.
-- Payments (`backend/career/billing.py`): Chapa (ETB), Lemon Squeezy (cards, USD) or, when neither is configured, a manual request the owner confirms in the Cohort tab. Employers can submit a vacancy for a featured listing, which the owner reviews and approves.
+- Payments (`backend/career/billing.py`): Chapa (ETB), Lemon Squeezy (cards, USD) or, when neither is configured, a manual request the owner confirms in the Cohort tab. Employers submit a vacancy for a featured listing; after the owner approves it, they pay and follow its views, Apply clicks and matching members at `/employers`, signing in with an emailed link.
 - Scripts can still call the API with `Authorization: Bearer <APP_TOKEN>`; that acts as the owner.
 
 ## AI
@@ -143,7 +143,7 @@ Tests use a temporary SQLite database and mocked providers. No network calls, mo
 - `backend/career/catalog.py`, `collector.py`: shared catalog, retention rule, shared collection of public sources
 - `backend/career/jev.py`, `jev_report.py`, `benchmark.py`: JEV pre-ranking, its validation report, the owner's blind benchmark
 - `backend/career/posting_facts.py`, `geo.py`: posting details for filters, country lookup for the map
-- `backend/career/billing.py`, `public_jobs.py`, `public_site.py`: payments, the public job directory and employer listings
+- `backend/career/billing.py`, `public_jobs.py`, `public_site.py`, `employers.py`: payments, the public job directory, employer listings and their self-service page
 - `backend/career/ai.py`: extraction, matching, drafting with independent review and revision
 - `backend/career/notifications.py`: in-app inbox, Telegram, email, WhatsApp, digests, test alerts
 - `backend/career/telegram.py`: long polling, chat linking, button handling

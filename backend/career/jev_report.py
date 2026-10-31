@@ -145,8 +145,9 @@ def main(argv=None):
     print(f"Postings with a current (rubric {scoring.RUBRIC_VERSION}) JEV score: {len(scored)}, input tokens {tokens}")
     print("Models that answered: " + (", ".join(f"{m} ({n})" for m, n in models.most_common()) or "n/a"))
     if settings.jev_model.endswith("latest"):
-        print(f"  Warning: JEV_MODEL={settings.jev_model} is a moving alias. Pin a dated model (see --models) before validating,")
-        print("  so a provider update cannot change scores mid-comparison.")
+        print(f"  Note: JEV_MODEL={settings.jev_model} is an alias the provider can update. Pin a dated model if --models lists one;")
+        print("  otherwise check its release date with --models before each report, and rescore with python -m career.jev_backfill")
+        print("  when it has changed, so the comparison does not mix two versions.")
     if len(models) > 1:
         print("  Warning: scores come from more than one model; rescore with python -m career.jev_backfill to compare like with like.")
     if older:

@@ -28,6 +28,8 @@ def _notify_owner(subject, text):
 
 
 # --- employer postings ---------------------------------------------------------------
+# Submitted -> the owner reviews -> approved (awaiting payment) -> paid: featured until
+# featured_until. Employers follow their listings through employers.py.
 
 
 def submit_employer_post(db, body):
@@ -50,7 +52,15 @@ def submit_employer_post(db, body):
     telemetry.capture("server_employer_post_submitted", {"company": data["company"]})
     _notify_owner(
         f"{settings.app_name}: featured vacancy request from {data['company']}",
-        f"{data['contact_name']} ({data['contact_email']}) submitted \"{data['title']}\" at {data['company']}, {data['location']}.\nDeadline: {data['deadline'] or 'not given'}\nPosting: {data['url']}\n\nNote: {data['note'] or '-'}\n\nApprove it in the Cohort tab after payment ({settings.featured_listing_etb} ETB / {settings.featured_listing_usd} USD for {FEATURED_DAYS} days).",
+        f"{data['contact_name']} ({data['contact_email']}) submitted \"{data['title']}\" at {data['company']}, {data['location']}.\nDeadline: {data['deadline'] or 'not given'}\nPosting: {data['url']}\n\nNote: {data['note'] or '-'}\n\nReview it in the Cohort tab. Once approved, the employer is emailed a link to pay ({settings.featured_listing_etb} ETB / {settings.featured_listing_usd} USD for {FEATURED_DAYS} days), and the listing goes live when the payment clears.",
+    )
+    from . import employers
+
+    employers.send_link(
+        db,
+        data["contact_email"],
+        f"{settings.app_name}: we received your vacancy",
+        f"Thank you for submitting \"{data['title']}\". We review vacancies within one working day and email you when it is approved; you then pay to feature it, and it goes live as soon as the payment clears.",
     )
     return data
 
@@ -67,11 +77,40 @@ def moderate_employer_post(db, post_id, status):
     data = read(db, key, user_id=SYSTEM)
     if not data:
         raise ValueError("Unknown posting.")
+    newly_approved = status == "approved" and data.get("status") != "approved"
     data = {**data, "status": status, "moderated": now()}
-    if status == "approved":
-        data["featured_until"] = (datetime.now(timezone.utc) + timedelta(days=FEATURED_DAYS)).isoformat()
-        data["posted"] = data.get("posted") or now()
     put(db, "employer_post", key, data, user_id=SYSTEM)
+    if newly_approved and not data.get("featured_until"):
+        from . import employers
+
+        data["emailed"] = employers.send_link(
+            db,
+            data["contact_email"],
+            f"{settings.app_name}: your vacancy is approved",
+            f"\"{data['title']}\" is approved. Pay {settings.featured_listing_etb:,} ETB or ${settings.featured_listing_usd} to feature it for {FEATURED_DAYS} days at the top of the public listings, in the Telegram digest and in the searches of members it matches. It goes live as soon as the payment clears.",
+        )
+    return data
+
+
+def activate_employer_post(db, post_id, ref=None):
+    """Feature an approved listing for FEATURED_DAYS, after the current period if it is still running."""
+    key = "employer_post:" + post_id
+    data = read(db, key, user_id=SYSTEM)
+    if not data:
+        raise ValueError("Unknown posting.")
+    if data.get("status") != "approved":
+        raise ValueError("Only approved postings can be featured.")
+    start = datetime.now(timezone.utc)
+    try:
+        start = max(start, datetime.fromisoformat(data.get("featured_until")))
+    except (TypeError, ValueError):
+        pass
+    data = {**data, "featured_until": (start + timedelta(days=FEATURED_DAYS)).isoformat(), "posted": data.get("posted") or now()}
+    data["payments"] = [*data.get("payments", []), ref or "owner"]
+    put(db, "employer_post", key, data, user_id=SYSTEM)
+    from . import public_jobs
+
+    public_jobs.reset_cache()
     return data
 
 
@@ -90,6 +129,24 @@ def live_employer_posts(db):
             continue
         out.append(p)
     return out
+
+
+def member_postings(db):
+    """Live featured listings as postings for members' searches; keyword screening applies as usual."""
+    return [
+        {
+            "title": p["title"],
+            "company": p["company"],
+            "location": p.get("location") or "",
+            "url": p["url"],
+            "description": p["description"],
+            "deadline": p.get("deadline"),
+            "posted": p.get("posted"),
+            "source": "Featured employer",
+            "featured_post": p["id"],
+        }
+        for p in live_employer_posts(db)
+    ]
 
 
 # --- testimonials ----------------------------------------------------------------------

@@ -103,6 +103,7 @@ const VIEWS: [string, string][] = [
 ];
 export type Job = {
   id: string;
+  featured_post?: string;
   facts?: Facts;
   keyword_sample?: boolean;
   unlisted_since?: string;
@@ -273,7 +274,18 @@ type Bench = {
 };
 const FEED_KINDS = ["reliefweb", "greenhouse", "lever", "workable", "smartrecruiters", "ashby"];
 type Referrals = { invites: { code: string; link: string; used: boolean; joined_name?: string | null; joined_at?: string | null }[]; referred: number };
-type EmployerPostRow = { id: string; title: string; company: string; location: string; url: string; deadline?: string | null; contact_name: string; contact_email: string; note: string; status: string; created: string; featured_until?: string };
+type EmployerPostRow = { id: string; title: string; company: string; location: string; url: string; deadline?: string | null; contact_name: string; contact_email: string; note: string; status: string; created: string; featured_until?: string;
+  state: "review" | "awaiting_payment" | "live" | "ended" | "rejected";
+  stats: { views: number; apply_clicks: number; matches: number };
+  emailed?: boolean;
+};
+const POST_STATES: Record<EmployerPostRow["state"], string> = {
+  review: "awaiting review",
+  awaiting_payment: "approved, awaiting payment",
+  live: "live",
+  ended: "ended",
+  rejected: "rejected",
+};
 type Testimonial = { id: string; name: string; role: string; organisation: string; quote: string };
 type EnquiryRow = { id: string; organisation: string; contact_name: string; contact_email: string; seats: number; note: string; status: string; created: string };
 type PaymentRow = { ref: string; email: string; product: string; amount: number; currency: string; provider: string; status: string; created: string; paid_at?: string };
@@ -2687,42 +2699,82 @@ export default function Home() {
                   )}
                   {(overview.employer_posts ?? []).length > 0 && (
                     <section className="panel">
-                      <h2>Featured vacancy requests ({(overview.employer_posts ?? []).filter((p) => p.status === "pending").length} pending)</h2>
+                      <h2>Featured vacancies ({(overview.employer_posts ?? []).filter((p) => p.state === "review").length} to review)</h2>
                       <p className="field-help">
-                        Employers pay {overview.pricing?.featured_listing.etb.toLocaleString()} ETB or ${overview.pricing?.featured_listing.usd} for {overview.pricing?.featured_listing.days} days at the top of the public listings. Approve after payment.
+                        Approve a vacancy and the employer is emailed a sign-in link to pay {overview.pricing?.featured_listing.etb.toLocaleString()} ETB or $
+                        {overview.pricing?.featured_listing.usd}; it goes live for {overview.pricing?.featured_listing.days} days when the payment clears. Employers follow views, apply clicks
+                        and matching members at <a href="/employers">/employers</a>. Use Feature now for a payment received by hand.
                       </p>
-                      {(overview.employer_posts ?? []).map((p) => (
-                        <div className="source-row" key={p.id}>
-                          <Megaphone size={18} />
-                          <div>
-                            <strong>
-                              {p.title} · {p.company}
-                            </strong>
-                            <p>
-                              {p.location} · {p.contact_name} ({p.contact_email}) · {p.deadline ? "closes " + p.deadline : "no deadline"} ·{" "}
-                              <a href={p.url} target="_blank" rel="noreferrer">
-                                posting
-                              </a>
-                              {p.note ? " · " + p.note : ""}
-                            </p>
-                            <p>
-                              <span className={"tag " + (p.status === "approved" ? "tag-green" : "")}>{p.status}{p.status === "approved" && p.featured_until ? " until " + new Date(p.featured_until).toLocaleDateString() : ""}</span>
-                            </p>
+                      {(overview.employer_posts ?? []).map((p) => {
+                        const moderate = (status: string, done?: string) =>
+                          act("post-" + p.id, async () => {
+                            await call(`/admin/employer-posts/${p.id}`, "PUT", { status });
+                            setOverview(await call<Overview>("/admin/overview"));
+                          }, done);
+                        return (
+                          <div className="source-row" key={p.id}>
+                            <Megaphone size={18} />
+                            <div>
+                              <strong>
+                                {p.title} · {p.company}
+                              </strong>
+                              <p>
+                                {p.location} · {p.contact_name} ({p.contact_email}) · {p.deadline ? "closes " + p.deadline : "no deadline"} ·{" "}
+                                <a href={p.url} target="_blank" rel="noreferrer">
+                                  posting
+                                </a>
+                                {p.note ? " · " + p.note : ""}
+                              </p>
+                              <p>
+                                <span className={"tag " + (p.state === "live" ? "tag-green" : "")}>
+                                  {POST_STATES[p.state] ?? p.status}
+                                  {p.state === "live" && p.featured_until ? " until " + new Date(p.featured_until).toLocaleDateString() : ""}
+                                </span>{" "}
+                                {p.stats.views} views · {p.stats.apply_clicks} apply clicks · {p.stats.matches} members matched
+                              </p>
+                            </div>
+                            <div className="button-row">
+                              {(p.state === "review" || p.state === "rejected") && (
+                                <button className="text-button" disabled={busy === "post-" + p.id} onClick={() => moderate("approved", "Approved; the employer is emailed a payment link")}>
+                                  Approve
+                                </button>
+                              )}
+                              {(p.state === "awaiting_payment" || p.state === "ended" || p.state === "live") && (
+                                <button
+                                  className="text-button"
+                                  disabled={busy === "post-" + p.id}
+                                  onClick={() =>
+                                    act("post-" + p.id, async () => {
+                                      await call(`/admin/employer-posts/${p.id}/activate`, "POST");
+                                      setOverview(await call<Overview>("/admin/overview"));
+                                    }, "Featured for 14 more days")
+                                  }
+                                >
+                                  {p.state === "live" ? "Extend" : "Feature now"}
+                                </button>
+                              )}
+                              {p.state !== "review" && p.state !== "rejected" && (
+                                <button
+                                  className="text-button"
+                                  onClick={() =>
+                                    act("link-" + p.id, async () => {
+                                      const r = await call<{ url: string; hours: number }>(`/admin/employer-posts/${p.id}/link`);
+                                      await navigator.clipboard?.writeText(r.url);
+                                    }, "Sign-in link copied; it works once")
+                                  }
+                                >
+                                  Copy sign-in link
+                                </button>
+                              )}
+                              {p.state !== "rejected" && (
+                                <button className="text-button" disabled={busy === "post-" + p.id} onClick={() => moderate("rejected")}>
+                                  {p.state === "live" ? "Remove" : "Reject"}
+                                </button>
+                              )}
+                            </div>
                           </div>
-                          <div className="button-row">
-                            {p.status !== "approved" && (
-                              <button className="text-button" onClick={() => act("post-" + p.id, async () => { await call(`/admin/employer-posts/${p.id}`, "PUT", { status: "approved" }); setOverview(await call<Overview>("/admin/overview")); }, "Featured for 14 days")}>
-                                Approve
-                              </button>
-                            )}
-                            {p.status !== "rejected" && (
-                              <button className="text-button" onClick={() => act("post-" + p.id, async () => { await call(`/admin/employer-posts/${p.id}`, "PUT", { status: "rejected" }); setOverview(await call<Overview>("/admin/overview")); })}>
-                                {p.status === "approved" ? "Remove" : "Reject"}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </section>
                   )}
                   <section className="panel">
@@ -3313,7 +3365,7 @@ export default function Home() {
               <div className="panel-heading">
                 <h3>Original posting</h3>
                 {link(job.url) && (
-                  <a className="text-button" href={link(job.url)} target="_blank" rel="noreferrer">
+                  <a className="text-button" href={job.featured_post ? `/go/${job.featured_post}` : link(job.url)} target="_blank" rel="noreferrer">
                     Open source <ArrowUpRight size={15} />
                   </a>
                 )}

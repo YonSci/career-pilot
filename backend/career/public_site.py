@@ -167,7 +167,7 @@ def job_page(data, slug):
     facts_html = "".join(f'<div class="fact"><small>{html.escape(k)}</small><b>{html.escape(v)}</b></div>' for k, v in facts)
     chips = "".join(f'<a class="chip" href="/jobs/{s}">{html.escape(pj.SECTORS[s][0].replace(" jobs", ""))}</a>' for s in j.get("sectors", []))
     source_note = (
-        "<p><em>This vacancy was submitted by the employer and is featured for two weeks.</em></p>" if j.get("featured") else f'<p><em>Summary of the public posting on {html.escape(j["source"])}. Read the full text and apply on the employer\'s page.</em></p>'
+        "<p><em>This vacancy was submitted by the employer and is featured.</em></p>" if j.get("featured") else f'<p><em>Summary of the public posting on {html.escape(j["source"])}. Read the full text and apply on the employer\'s page.</em></p>'
     )
     paragraphs = "".join(f"<p>{html.escape(p)}</p>" for p in (j.get("body") or j.get("excerpt") or "").split("\n\n") if p.strip())
     same_org = [x for x in data["_all"] if x.get("org_slug") == j.get("org_slug") and x["slug"] != slug][:3]
@@ -182,7 +182,7 @@ def job_page(data, slug):
         f'<div class="job-head"><div><div class="chips">{chips}{featured_chip}</div>'
         f'<h1>{html.escape(j["title"])}</h1><div class="org">{html.escape(j["company"])}{" · " if j["company"] and j["location"] else ""}{html.escape(j["location"])}</div></div></div>'
         f'<div class="facts">{facts_html}</div>'
-        f'<div class="actions"><a class="apply" href="{html.escape(j["url"])}" target="_blank" rel="noopener nofollow" data-track="job_apply_clicked">Apply on the employer\'s page ↗</a>'
+        f'<div class="actions"><a class="apply" href="{html.escape(j.get("apply_url") or j["url"])}" target="_blank" rel="noopener nofollow" data-track="job_apply_clicked">Apply on the employer\'s page ↗</a>'
         f'<a class="ghost" href="/app/?job_url={quote(j["url"], safe="")}" data-track="job_match_clicked">See how you match</a></div>'
         f'<div class="body">{source_note}{paragraphs}</div>{share_links(j)}{related}'
     )

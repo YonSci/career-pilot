@@ -146,6 +146,8 @@ class Settings(BaseSettings):
     lemon_checkout_pro: str = ""
     lemon_checkout_pro_plus: str = ""
     lemon_checkout_package: str = ""
+    # Lemon Squeezy checkout link for a featured employer listing (USD).
+    lemon_checkout_featured: str = ""
     lemon_webhook_secret: str = ""
     # Shown to members paying by hand when no gateway is configured (Telebirr number, bank details).
     billing_contact: str = ""

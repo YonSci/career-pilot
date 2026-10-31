@@ -40,7 +40,10 @@ def test_employer_posting_is_moderated_then_featured(client, monkeypatch):
     post = next(p for p in overview["employer_posts"] if p["title"] == POST["title"])
     assert post["status"] == "pending" and post["contact_email"] == "hr@example.org"
     approved = client.put(f"/api/admin/employer-posts/{post['id']}", json={"status": "approved"}).json()
-    assert approved["status"] == "approved" and approved["featured_until"]
+    # Approval alone does not publish: the employer pays first (here the owner features it by hand).
+    assert approved["status"] == "approved" and not approved.get("featured_until")
+    assert all(j["title"] != POST["title"] for j in anon.get("/api/public/jobs").json()["latest"])
+    assert client.post(f"/api/admin/employer-posts/{post['id']}/activate").json()["featured_until"]
     d = anon.get("/api/public/jobs").json()
     first = d["latest"][0]
     assert first["title"] == POST["title"] and first["featured"] is True and first["source"] == "Featured employer" and "climate" in first["sectors"]

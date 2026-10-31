@@ -317,4 +317,4 @@ def test_owner_labels_a_blind_sample_and_the_report_measures_against_it(client, 
     assert "Blind benchmark (owner's labels in the Cohort tab, no scores shown): 2 labelled, 1 relevant" in out
     assert "relevant postings rank mode would keep: 1/1" in out
     assert "Confidence calibration" in out and "Funnel: catalog postings" in out
-    assert "JEV_MODEL=jev-latest is a moving alias" in out
+    assert "JEV_MODEL=jev-latest is an alias the provider can update" in out

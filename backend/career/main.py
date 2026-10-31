@@ -18,7 +18,8 @@ from fastapi import (
     BackgroundTasks,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response as RawResponse, JSONResponse, HTMLResponse
+from fastapi.responses import Response as RawResponse, JSONResponse, HTMLResponse, RedirectResponse
+from urllib.parse import parse_qs, urlparse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
@@ -60,6 +61,7 @@ from . import posting_facts
 from . import benchmark
 from . import sources
 from . import public_site
+from . import employers
 from .ai import server_key_usage
 
 
@@ -381,10 +383,14 @@ def sector_jobs_page(sector: str, request: Request, db=Depends(db_session)):
 
 
 @app.get("/job/{slug}", include_in_schema=False)
-def job_detail_page(slug: str, db=Depends(db_session)):
-    page = public_site.job_page(public_jobs.listings(db), slug)
+def job_detail_page(slug: str, request: Request, db=Depends(db_session)):
+    data = public_jobs.listings(db)
+    page = public_site.job_page(data, slug)
     if page is None:
         raise HTTPException(404, "This posting is no longer listed.")
+    post_id = data["_by_slug"][slug].get("post_id")
+    if post_id and not employers.is_bot(request.headers.get("user-agent")):
+        employers.count(db, post_id, "views")
     return HTMLResponse(page)
 
 
@@ -448,15 +454,18 @@ def billing_checkout(body: CheckoutRequest, user: User = Depends(auth), db=Depen
 
 @app.get("/api/billing/return", include_in_schema=False)
 def billing_return(ref: str = "", db=Depends(db_session)):
-    """Where Chapa sends the member back. Verifies server-side, then opens the dashboard."""
-    from fastapi.responses import RedirectResponse
-
-    status = "unknown"
+    """Where Chapa sends the payer back. Verifies server-side, then opens the
+    member dashboard, or the employer's listings for a featured listing."""
+    status, product = "unknown", ""
     if ref and settings.chapa_secret_key:
         try:
-            status = billing.chapa_verify(db, ref).get("status", "unknown")
+            payment = billing.chapa_verify(db, ref)
+            status, product = payment.get("status", "unknown"), payment.get("product", "")
         except Exception as e:
             logging.getLogger(__name__).warning("Chapa verify failed for %s: %s", ref, type(e).__name__)
+    if product == "featured_listing":
+        refresh_public()
+        return RedirectResponse(settings.public_url.rstrip("/") + "/employers/dashboard?payment=" + status, status_code=303)
     return RedirectResponse(settings.public_url.rstrip("/") + "/app/?payment=" + status, status_code=303)
 
 
@@ -466,6 +475,7 @@ async def chapa_webhook(request: Request, db=Depends(db_session)):
     signature = request.headers.get("x-chapa-signature") or request.headers.get("chapa-signature") or ""
     try:
         billing.chapa_webhook(db, raw, signature)
+        refresh_public()
     except PermissionError:
         raise HTTPException(401, "Bad signature.")
     except ValueError as e:
@@ -478,6 +488,7 @@ async def lemon_webhook(request: Request, db=Depends(db_session)):
     raw = await request.body()
     try:
         billing.lemon_webhook(db, raw, request.headers.get("x-signature", ""))
+        refresh_public()
     except PermissionError:
         raise HTTPException(401, "Bad signature.")
     except ValueError as e:
@@ -488,9 +499,11 @@ async def lemon_webhook(request: Request, db=Depends(db_session)):
 @app.post("/api/admin/payments/{ref}/paid")
 def admin_mark_paid(ref: str, _: User = Depends(admin), db=Depends(db_session)):
     try:
-        return billing.apply_purchase(db, ref, provider_ref="manual")
+        payment = billing.apply_purchase(db, ref, provider_ref="manual")
     except ValueError as e:
         raise HTTPException(404, str(e))
+    refresh_public()
+    return payment
 
 
 # --- growth: owner moderation, referrals, channel ---------------------------------------
@@ -506,9 +519,141 @@ def admin_moderate_post(id: str, body: Moderation, _: User = Depends(admin), db=
         post = growth.moderate_employer_post(db, id, body.status)
     except ValueError as e:
         raise HTTPException(404, str(e))
+    refresh_public()
+    return post
+
+
+@app.post("/api/admin/employer-posts/{id}/activate")
+def admin_feature_post(id: str, _: User = Depends(admin), db=Depends(db_session)):
+    """Feature an approved listing without an online payment (paid by hand, or free)."""
+    try:
+        post = growth.activate_employer_post(db, id, "owner")
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    refresh_public()
+    return post
+
+
+@app.get("/api/admin/employer-posts/{id}/link")
+def admin_employer_link(id: str, _: User = Depends(admin), db=Depends(db_session)):
+    """A sign-in link for the listing's contact, for the owner to send when email is not configured."""
+    post = read(db, "employer_post:" + id, user_id=SYSTEM)
+    if not post:
+        raise HTTPException(404, "Unknown posting.")
+    return {"url": employers.login_link(db, post["contact_email"]), "hours": employers.LINK_HOURS}
+
+
+def refresh_public():
+    """Featured listings changed: rebuild the public listings and the landing page."""
     public_jobs.reset_cache()
     _landing_cache.update(at=0.0, html=None)
-    return post
+
+
+# --- employers: self-service listings ---------------------------------------------------
+
+
+async def _form(request: Request):
+    """A plain HTML form's fields. Forms posted from another site are refused."""
+    origin = request.headers.get("origin")
+    if origin not in (None, "null") and urlparse(origin).netloc != request.headers.get("host"):
+        raise HTTPException(403, "Cross-site form submission refused.")
+    return {k: v[0] for k, v in parse_qs((await request.body()).decode("utf-8", "replace")).items()}
+
+
+def _employer(request: Request, db):
+    return employers.session_email(db, request.cookies.get(employers.COOKIE))
+
+
+def _redirect(path):
+    return RedirectResponse(path, status_code=303)
+
+
+@app.get("/employers", include_in_schema=False)
+def employer_home(request: Request, db=Depends(db_session)):
+    if _employer(request, db):
+        return _redirect("/employers/dashboard")
+    return HTMLResponse(employers.sign_in_page())
+
+
+@app.post("/employers/link", include_in_schema=False)
+async def employer_link(request: Request, db=Depends(db_session)):
+    email = (await _form(request)).get("email", "").strip().lower()
+    try:
+        accounts.throttle("employer-link:" + (request.client.host if request.client else "?"), limit=5, window=3600)
+        accounts.throttle("employer-link:" + email, limit=3, window=3600)
+    except ValueError as e:
+        return HTMLResponse(employers.sign_in_page(str(e)), status_code=429)
+    if not employers.can_email():
+        contact = settings.billing_contact or "the site owner"
+        return HTMLResponse(employers.sign_in_page(f"Email sign-in is not available yet. Contact {contact} for a sign-in link."))
+    if "@" in email and employers.posts_of(db, email):
+        await run_in_threadpool(employers.send_link, db, email, f"{settings.app_name}: your sign-in link", "Here is your link to manage your featured vacancies.")
+    # The same answer either way, so the form does not reveal who has submitted vacancies.
+    return HTMLResponse(employers.sign_in_page("If that address has a vacancy with us, a sign-in link is on its way. Check your inbox."))
+
+
+@app.get("/employers/login", include_in_schema=False)
+def employer_login_page(token: str = ""):
+    return HTMLResponse(employers.confirm_page(token))
+
+
+@app.post("/employers/login", include_in_schema=False)
+async def employer_login(request: Request, db=Depends(db_session)):
+    session = employers.redeem(db, (await _form(request)).get("token", ""))
+    if not session:
+        return HTMLResponse(employers.sign_in_page("That link has expired or was already used. Request a new one below."), status_code=400)
+    response = _redirect("/employers/dashboard")
+    response.set_cookie(employers.COOKIE, session, max_age=employers.SESSION_DAYS * 86400, httponly=True, samesite="lax", secure=settings.public_https, path="/employers")
+    return response
+
+
+@app.get("/employers/dashboard", include_in_schema=False)
+def employer_dashboard(request: Request, payment: str = "", db=Depends(db_session)):
+    email = _employer(request, db)
+    if not email:
+        return _redirect("/employers")
+    message = {"paid": "Payment received: your listing is live.", "pending": "Your payment is still being confirmed; this page updates once it clears."}.get(payment, "")
+    if payment and not message:
+        message = "We could not confirm the payment yet. If you were charged, it activates once confirmed; otherwise try again."
+    return HTMLResponse(employers.dashboard_page(db, email, message))
+
+
+@app.post("/employers/listings/{id}/checkout", include_in_schema=False)
+async def employer_checkout(id: str, request: Request, db=Depends(db_session)):
+    email = _employer(request, db)
+    if not email:
+        return _redirect("/employers")
+    currency = (await _form(request)).get("currency", "ETB")
+    post = next((p for p in employers.posts_of(db, email) if p["id"] == id), None)
+    if not post:
+        raise HTTPException(404, "Unknown listing.")
+    try:
+        accounts.throttle("employer-checkout:" + email, limit=10, window=3600)
+        result = await run_in_threadpool(employers.checkout, db, post, currency)
+    except ValueError as e:
+        return HTMLResponse(employers.dashboard_page(db, email, str(e)), status_code=422)
+    if result["mode"] == "redirect":
+        return _redirect(result["url"])
+    return HTMLResponse(employers.manual_page(result))
+
+
+@app.post("/employers/logout", include_in_schema=False)
+def employer_logout(request: Request, db=Depends(db_session)):
+    employers.end_session(db, request.cookies.get(employers.COOKIE))
+    response = _redirect("/employers")
+    response.delete_cookie(employers.COOKIE, path="/employers")
+    return response
+
+
+@app.get("/go/{post_id}", include_in_schema=False)
+def featured_apply(post_id: str, request: Request, db=Depends(db_session)):
+    """Apply link of a featured listing: counts the click, then opens the employer's page."""
+    post = read(db, "employer_post:" + post_id, user_id=SYSTEM)
+    if not post or post.get("status") != "approved":
+        raise HTTPException(404, "This posting is no longer listed.")
+    if not employers.is_bot(request.headers.get("user-agent")):
+        employers.count(db, post_id, "apply_clicks")
+    return RedirectResponse(post["url"], status_code=302)
 
 
 class TestimonialInput(BaseModel):
@@ -799,7 +944,7 @@ def admin_overview(_: User = Depends(admin), db=Depends(db_session)):
         "users": metrics,
         "invites": accounts.list_invites(db),
         "waitlist": accounts.list_waitlist(db),
-        "employer_posts": growth.employer_posts(db),
+        "employer_posts": [{**p, "state": employers.state(p), "stats": employers.stats(db, p["id"])} for p in growth.employer_posts(db)],
         "testimonials": growth.testimonials(db),
         "enquiries": growth.enquiries(db),
         "payments": billing.payments(db)[:50],

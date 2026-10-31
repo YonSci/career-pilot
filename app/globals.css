@@ -526,7 +526,9 @@ h1 {
 .bench-text {
   max-height: 320px;
   overflow-y: auto;
+  overflow-x: hidden;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-size: 13px;
   line-height: 1.6;
   color: #42505d;
