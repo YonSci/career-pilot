@@ -20,8 +20,8 @@ from collections import Counter
 from datetime import datetime, timezone, timedelta
 from .config import settings
 from .db import Record, Session, SYSTEM, now, put, read
-from .sources import Context, collect, validate_source, RELIEFWEB_DEFAULT_QUERY
-from . import catalog
+from .sources import Context, collect, failure_message, validate_source, RELIEFWEB_DEFAULT_QUERY
+from . import catalog, sources
 
 log = logging.getLogger(__name__)
 CHECK_EVERY = 300
@@ -109,7 +109,7 @@ def read_feed(db, feed, ctx):
     try:
         jobs, _ = collect({"kind": feed["kind"], "value": feed["value"]}, None, ctx)
     except Exception as e:
-        mark(db, feed["kind"], feed["value"], False, error=str(e) if isinstance(e, ValueError) else type(e).__name__)
+        mark(db, feed["kind"], feed["value"], False, error=failure_message(e, feed["kind"], feed["value"]))
         raise
     catalog.record(jobs)
     mark(db, feed["kind"], feed["value"], True, received=len(jobs))
@@ -153,6 +153,7 @@ def add_curated(db, kind, value):
     if kind not in FEED_KINDS:
         raise ValueError("Shared sources are ReliefWeb searches and employer boards (Greenhouse, Lever, Workable, SmartRecruiters, Ashby).")
     validate_source(kind, (value or "").strip())
+    sources.check_board(kind, value)
     key = feed_key(kind, value)
     state = read(db, key, {}, user_id=SYSTEM) or {}
     put(db, "catalog-feed", key, {**state, "kind": kind, "value": feed_value(kind, value), "curated": True, "added": state.get("added") or now()}, user_id=SYSTEM)

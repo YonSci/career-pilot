@@ -2673,10 +2673,11 @@ export default function Home() {
                           <strong>
                             {s.source_kinds?.[f.kind] ?? f.kind}: {f.value}
                           </strong>
-                          <span className="field-help">
-                            {f.last_ok ? `Read ${new Date(f.last_ok).toLocaleString()}, ${f.received ?? 0} postings` : "Not read yet"}
-                          </span>
-                          {f.error && <span className="danger-text">{f.error}</span>}
+                          <p>
+                            {f.error && f.last_try ? `Last try ${new Date(f.last_try).toLocaleString()} failed. ` : ""}
+                            {f.last_ok ? `Read ${new Date(f.last_ok).toLocaleString()}, ${f.received ?? 0} postings` : f.error ? "" : "Not read yet"}
+                          </p>
+                          {f.error && <p className="danger-text">{f.error}</p>}
                           <button
                             className="text-button"
                             onClick={() =>

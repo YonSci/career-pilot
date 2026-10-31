@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone, timedelta
 from career import catalog, catalog_report, collector
+from career.sources import check_board
 from career.config import settings
 from career.db import Record, Session, SYSTEM, put, read
 from tests.conftest import signup_member
@@ -117,3 +118,30 @@ def test_a_failing_shared_source_is_recorded_and_waits_for_the_interval(client, 
     assert "failing: lever gone: Board not found." in capsys.readouterr().out
     with Session() as db:
         assert db.query(Record).filter_by(user_id=SYSTEM, kind="posting").count() == 0
+
+
+def test_a_board_that_does_not_exist_is_refused_with_a_clear_message(client, monkeypatch):
+    import httpx
+    from career import sources
+
+    def platform(request):
+        return httpx.Response(200 if request.url.host == "apply.workable.com" else 404, json={"results": []})
+
+    assert check_board("workable", "cgiar", client=httpx.Client(transport=httpx.MockTransport(platform))) is None
+    try:
+        check_board("greenhouse", "cgiar", client=httpx.Client(transport=httpx.MockTransport(platform)))
+        raise AssertionError("expected ValueError")
+    except ValueError as e:
+        assert "no Greenhouse employer board named cgiar" in str(e) and "boards.greenhouse.io/acme" in str(e)
+
+    def missing(kind, value, client=None):
+        raise ValueError(sources.board_missing(kind, value))
+
+    monkeypatch.setattr(sources, "check_board", missing)
+    r = client.post("/api/admin/catalog-feeds", json={"kind": "greenhouse", "value": "cgiar"})
+    assert r.status_code == 422 and "no Greenhouse employer board named cgiar" in r.json()["detail"]
+    assert client.post("/api/sources", json={"kind": "lever", "value": "nobody"}).status_code == 422
+
+    # A board that disappears later shows the same message, not the exception's name.
+    gone = httpx.HTTPStatusError("404", request=httpx.Request("GET", "https://x"), response=httpx.Response(404))
+    assert "no Lever employer board named gone" in sources.failure_message(gone, "lever", "gone")

@@ -74,6 +74,14 @@ def no_keyword_sample(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_board_check(monkeypatch):
+    """Adding an employer board asks the platform whether it exists; tests stay offline."""
+    from career import sources
+
+    monkeypatch.setattr(sources, "check_board", lambda kind, value, client=None: None)
+
+
+@pytest.fixture(autouse=True)
 def no_dns(monkeypatch):
     """Tests never resolve real hostnames; example hosts count as public."""
     from career import sources

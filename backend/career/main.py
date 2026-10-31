@@ -56,6 +56,7 @@ from . import billing
 from . import growth
 from . import channel
 from . import collector
+from . import sources
 from . import public_site
 from .ai import server_key_usage
 
@@ -1146,6 +1147,8 @@ def schedule(body: Schedule, user: User = Depends(auth), db=Depends(db_session))
 def source(body: SourceInput, user: User = Depends(auth), db=Depends(db_session)):
     try:
         validate_source(body.kind, body.value)
+        if not find(db, f"source:{body.kind}:{body.value.strip()}"):
+            sources.check_board(body.kind, body.value)
     except ValueError as e:
         raise HTTPException(422, str(e))
     value = body.value.strip()

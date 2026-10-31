@@ -11,7 +11,7 @@ from sqlalchemy import update
 from langgraph.graph import StateGraph, START, END
 from .db import Record, User, Session, SYSTEM, put, read, rows, find, get_row, now, current_user, user_scope, user_snapshot
 from .schemas import Preferences, APPLICATION_STAGES
-from .sources import collect, clean_url, Context
+from .sources import collect, clean_url, Context, failure_message
 from .relevance import screen, priority
 from .ai import match_job, write_package, ai_available, month_key, KeyRejected
 from . import catalog, collector
@@ -534,11 +534,7 @@ def _run_scan(run_id):
             except Exception as e:
                 db.rollback()
                 log.exception("Source failed: %s", label)
-                message = (
-                    str(e)
-                    if isinstance(e, ValueError)
-                    else "Feed request failed. Check credentials, identifier, and provider availability."
-                )
+                message = failure_message(e, source.data["kind"], source.data.get("value"))
                 result["sources"].append({"name": label, "status": "failed", "error": message})
                 if feed:
                     collector.mark(db, source.data["kind"], source.data.get("value"), False, error=message)

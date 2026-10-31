@@ -983,6 +983,57 @@ def validate_source(kind, value):
             raise ValueError("Remotive categories are lowercase slugs separated by commas, for example data,research.")
 
 
+# Board address a member sees, and a cheap request that answers 404 for a board
+# that does not exist (SmartRecruiters answers 200 for any name, so it is not probed).
+BOARD_ADDRESSES = {
+    "greenhouse": "boards.greenhouse.io/acme",
+    "lever": "jobs.lever.co/acme",
+    "workable": "apply.workable.com/acme",
+    "smartrecruiters": "jobs.smartrecruiters.com/acme",
+    "ashby": "jobs.ashbyhq.com/acme",
+}
+BOARD_PROBES = {
+    "greenhouse": ("GET", "https://boards-api.greenhouse.io/v1/boards/{}"),
+    "lever": ("GET", "https://api.lever.co/v0/postings/{}?limit=1&mode=json"),
+    "workable": ("POST", "https://apply.workable.com/api/v3/accounts/{}/jobs"),
+    "ashby": ("GET", "https://api.ashbyhq.com/posting-api/job-board/{}"),
+}
+
+
+def board_missing(kind, value):
+    return (
+        f"There is no {KIND_LABELS[kind]} named {value}. Enter the name from the board's address "
+        f"({BOARD_ADDRESSES[kind]} is acme), and pick the type of platform the employer uses."
+    )
+
+
+def check_board(kind, value, client=None):
+    """Raise ValueError when an employer board does not exist. Network trouble is not
+    raised here: the board is read with the next search, which reports it."""
+    if kind not in BOARD_PROBES:
+        return
+    slug = board_slug((value or "").strip())
+    method, url = BOARD_PROBES[kind]
+    try:
+        with client or httpx.Client(timeout=20, headers={"User-Agent": USER_AGENT}) as c:
+            r = c.request(method, url.format(slug), **({"json": {}} if method == "POST" else {}))
+    except httpx.HTTPError:
+        return
+    if r.status_code == 404:
+        raise ValueError(board_missing(kind, slug))
+
+
+def failure_message(e, kind=None, value=None):
+    """What a member or the owner sees when a source could not be read."""
+    if isinstance(e, ValueError):
+        return str(e)
+    if isinstance(e, httpx.HTTPStatusError):
+        if e.response.status_code == 404 and kind in BOARD_ADDRESSES:
+            return board_missing(kind, (value or "").strip())
+        return f"The provider answered HTTP {e.response.status_code}. It will be retried on the next search."
+    return "Feed request failed. Check credentials, identifier, and provider availability."
+
+
 def collect(source, seen_mail=None, ctx=None):
     """Run one source. Returns (jobs, message_ids). Jobs may include partial
     entries {url, partial: True} for postings already stored."""

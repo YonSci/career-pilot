@@ -296,7 +296,7 @@
       <button class="btn btn-primary" type="submit">Request an invite</button>
     </form>
     <p class="msg" id="mini-msg" style="display:none"></p>
-    <p class="note">Free during the beta · AI usage included for the first members, your own OpenAI key after that · While places are open, you can start straight away.</p>
+    <p class="note">Free during the beta · <span id="ai-note">AI usage included for the first members, your own OpenAI key after that</span> · While places are open, you can start straight away.</p>
   </div>
   <div class="frame reveal" aria-label="Product preview">
     <div class="frame-bar"><i></i><i></i><i></i>
@@ -455,7 +455,7 @@
   <div class="section-head">
     <span class="eyebrow">Pricing</span>
     <h2>Free to start. Pay for depth when it earns its keep.</h2>
-    <p class="lead">The beta is free by invitation, with AI usage included for the first members. Paid plans are priced for Ethiopia in birr, with card payment in dollars for everyone else. Pay in birr by Telebirr or bank transfer, or by card.</p>
+    <p class="lead" id="pricing-lead">The beta is free by invitation, with AI usage included for the first members. Paid plans are priced for Ethiopia in birr, with card payment in dollars for everyone else. Pay in birr by Telebirr or bank transfer, or by card.</p>
   </div>
   <div class="offer">◆ <span><b>Founding-member offer:</b> everyone who joins during the beta keeps Pro at half price for the first year.</span></div>
   <div class="plans">
@@ -576,6 +576,12 @@
   // Inputs are masked and personal text hidden; visitors are anonymous.
   const track = (e, p) => { try { window.posthog && window.posthog.capture(e, p || {}); } catch {} };
   fetch("/api/setup").then((r) => r.json()).then((s) => {
+    // Once the included-AI places are taken, new members bring their own key: say so.
+    if (s.sponsored_seats_left === 0) {
+      document.getElementById("ai-note").textContent = "AI usage on your own OpenAI key (the places with AI included are taken)";
+      const lead = document.getElementById("pricing-lead");
+      if (lead) lead.textContent = "The beta is free by invitation; the places with AI usage included are taken, so new members use their own OpenAI key. Paid plans are priced for Ethiopia in birr, with card payment in dollars for everyone else. Pay in birr by Telebirr or bank transfer, or by card.";
+    }
     const a = s.analytics;
     if (!a || a.provider !== "posthog" || !a.key) return;
     // Official PostHog snippet (queues calls until array.js loads).
