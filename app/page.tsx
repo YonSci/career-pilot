@@ -336,6 +336,21 @@ type Overview = {
   pricing?: Pricing;
   channel?: { enabled: boolean; last_daily?: string | null; last_weekly?: string | null; posts?: number };
 };
+// The owner's business report (backend/career/business.py). ETB and USD are kept apart.
+type Money = { ETB: number; USD: number; count: number };
+type Business = {
+  month: string;
+  revenue: (Money & { month: string })[];
+  all_time: Money;
+  products: Record<string, Money & { label: string }>;
+  checkouts: Record<string, { started: number; paid: number }>;
+  awaiting_confirmation: { count: number; ETB: number; USD: number };
+  members: { accounts: number; paying_now: number; ever_paid: number; new_payers_this_month: number; repeat_payers: number; unused_credits: number };
+  employers: { submitted: number; approved: number; paid: number; median_days_approval_to_payment: number | null; views: number; apply_clicks: number; matches: number; click_through: number | null };
+  institutions: { enquiries: number; seats_asked: number; new: number };
+  ai_usage: { month: string; server_key_calls: number; jev_tokens: number }[];
+};
+const money = (m: { ETB: number; USD: number }) => [m.ETB ? `${m.ETB.toLocaleString()} ETB` : "", m.USD ? `$${m.USD.toLocaleString()}` : ""].filter(Boolean).join(" + ") || "0";
 const defaults: Prefs = {
   keywords: [
     "data science",
@@ -846,6 +861,7 @@ export default function Home() {
     [inviteNote, setInviteNote] = useState(""),
     [feedKind, setFeedKind] = useState("greenhouse"),
     [bench, setBench] = useState<Bench | null>(null),
+    [biz, setBiz] = useState<Business | null>(null),
     [feedValue, setFeedValue] = useState(""),
     [newCodes, setNewCodes] = useState<string[]>([]);
   const refresh = useCallback(async () => {
@@ -1056,6 +1072,7 @@ export default function Home() {
   useEffect(() => {
     if (tab === "admin" && s.user.role === "admin") {
       call<Overview>("/admin/overview").then(setOverview).catch(() => {});
+      call<Business>("/admin/business").then(setBiz).catch(() => {});
     }
   }, [tab, s.user.role]);
   const act = async (
@@ -2662,6 +2679,59 @@ export default function Home() {
                           </button>
                         </div>
                       ))}
+                    </section>
+                  )}
+                  {biz && (
+                    <section className="panel">
+                      <h2>Business</h2>
+                      <p className="field-help">
+                        Paid so far: <strong>{money(biz.all_time)}</strong> from {biz.all_time.count} payment{biz.all_time.count === 1 ? "" : "s"}. ETB and USD are kept apart. Full report:{" "}
+                        <code>python -m career.business_report</code>.
+                      </p>
+                      <div className="table-scroll">
+                        <table className="admin-table">
+                          <thead>
+                            <tr>
+                              <th>Month</th>
+                              <th>Revenue</th>
+                              <th>Payments</th>
+                              <th>Server-key AI calls</th>
+                              <th>JEV tokens</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {biz.revenue.map((m, i) => (
+                              <tr key={m.month}>
+                                <td>{m.month}</td>
+                                <td>{money(m)}</td>
+                                <td>{m.count}</td>
+                                <td>{biz.ai_usage[i]?.server_key_calls.toLocaleString()}</td>
+                                <td>{biz.ai_usage[i]?.jev_tokens.toLocaleString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="muted-text">
+                        By product:{" "}
+                        {Object.values(biz.products).length ? Object.values(biz.products).map((p) => `${p.label} ${money(p)} (${p.count})`).join(" · ") : "none yet"}
+                        <br />
+                        Checkouts paid:{" "}
+                        {Object.entries(biz.checkouts).length
+                          ? Object.entries(biz.checkouts).map(([k, v]) => `${k} ${v.paid} of ${v.started}`).join(" · ")
+                          : "none yet"}
+                        {biz.awaiting_confirmation.count ? ` · ${biz.awaiting_confirmation.count} manual requests awaiting confirmation (${money(biz.awaiting_confirmation)})` : ""}
+                        <br />
+                        Members: {biz.members.paying_now} of {biz.members.accounts} on a paid plan now · {biz.members.ever_paid} ever paid · {biz.members.new_payers_this_month} new payers this
+                        month · {biz.members.repeat_payers} bought a plan again · {biz.members.unused_credits} unused package credits
+                        <br />
+                        Employers: {biz.employers.submitted} submitted → {biz.employers.approved} approved → {biz.employers.paid} paid
+                        {biz.employers.median_days_approval_to_payment !== null ? ` · median ${biz.employers.median_days_approval_to_payment} days from approval to payment` : ""} ·{" "}
+                        {biz.employers.views} views, {biz.employers.apply_clicks} Apply clicks
+                        {biz.employers.click_through !== null ? ` (${Math.round(biz.employers.click_through * 100)}%)` : ""}, {biz.employers.matches} member matches
+                        <br />
+                        Institutions: {biz.institutions.enquiries} enquiries ({biz.institutions.new} new) for {biz.institutions.seats_asked} seats
+                      </p>
                     </section>
                   )}
                   {(overview.payments ?? []).some((p) => p.status !== "paid") && (

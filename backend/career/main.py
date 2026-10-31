@@ -62,6 +62,7 @@ from . import benchmark
 from . import sources
 from . import public_site
 from . import employers
+from . import business
 from .ai import server_key_usage
 
 
@@ -934,6 +935,12 @@ def remove_imap(user: User = Depends(auth), db=Depends(db_session)):
 
 
 # --- admin -----------------------------------------------------------------------------
+
+
+@app.get("/api/admin/business")
+def admin_business(_: User = Depends(admin), db=Depends(db_session)):
+    """Revenue, checkouts, paying members, the employer funnel and AI usage (see business.py)."""
+    return business.report(db)
 
 
 @app.get("/api/admin/overview")

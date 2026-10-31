@@ -118,6 +118,7 @@ Run on the server (on Render: Shell tab, from `/app`); all are read-only unless 
 
 - `python -m career.catalog_report`: catalog size, sources, shared sources, postings no longer listed, starter results.
 - `python -m career.jev_report`: the whole funnel, JEV against the AI and members' decisions, confidence calibration, recall by field, cost per good match, cutoff sweep, and the owner's blind benchmark labels. `--models` lists dated JEV models to pin in `JEV_MODEL`.
+- `python -m career.business_report`: revenue by month and product (ETB and USD apart), checkout conversion, paying members, the employer funnel with listing views and Apply clicks, institution enquiries, and monthly AI usage; also in the Cohort tab.
 - `python -m career.jev_backfill`: rescores evaluated postings after a rubric or model change (uses JEV tokens).
 - `python -m career.schedule_reminder`: lists members to remind about scheduled searches; a dry run unless `--send`.
 
