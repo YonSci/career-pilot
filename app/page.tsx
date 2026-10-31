@@ -1,5 +1,7 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import SwipeDeck from "./SwipeDeck";
+import type { MapPoint } from "./JobMap";
 import {
   BriefcaseBusiness,
   Search,
@@ -85,8 +87,23 @@ const POSTING_DETAILS = [
   ["salary", "Salary or rate"],
   ["contract_duration", "Contract length"],
 ] as const;
-type Job = {
+// Loaded only when the map is opened: the map library is the largest part of it.
+const JobMap = lazy(() => import("./JobMap"));
+// What the posting states, from its evaluation or its text; null when it does not say.
+type Facts = { work: string | null; seniority: string | null; contract: string | null; salary: string | null; country: string | null; lat: number | null; lng: number | null };
+const FACT_FILTERS: [keyof Facts, string, string[]][] = [
+  ["work", "Work arrangement", ["Remote", "Hybrid", "On-site"]],
+  ["seniority", "Level", ["Entry", "Mid-level", "Senior", "Leadership"]],
+  ["contract", "Contract", ["Full-time", "Fixed-term", "Consultancy", "Part-time", "Internship", "Fellowship", "Volunteer"]],
+];
+const VIEWS: [string, string][] = [
+  ["list", "List"],
+  ["cards", "Cards"],
+  ["map", "Map"],
+];
+export type Job = {
   id: string;
+  facts?: Facts;
   keyword_sample?: boolean;
   unlisted_since?: string;
   title: string;
@@ -778,6 +795,17 @@ export default function Home() {
     [filter, setFilter] = useState("all"),
     [sort, setSort] = useState("score"),
     [hideExpired, setHideExpired] = useState(true),
+    [view, setView] = useState(() => {
+      try {
+        return localStorage.getItem("jfa-view") || "list";
+      } catch {
+        return "list";
+      }
+    }),
+    [factFilter, setFactFilter] = useState<Partial<Record<keyof Facts, string>>>({}),
+    [salaryOnly, setSalaryOnly] = useState(false),
+    [country, setCountry] = useState(""),
+    [unstatedToo, setUnstatedToo] = useState(false),
     [limit, setLimit] = useState(PAGE),
     [selected, setSelected] = useState<string | null>(null),
     [detail, setDetail] = useState<Job | null>(null),
@@ -1058,7 +1086,20 @@ export default function Home() {
   const unreadIds = new Set(
     s.alerts.filter((a) => a.channel === "inapp" && a.status === "unread").map((a) => a.job_id),
   );
-  const visible = s.jobs
+  // "no" when a job contradicts a detail filter, "unstated" when its posting does not say.
+  const factVerdict = (j: Job) => {
+    let unstated = false;
+    for (const [k, want] of Object.entries(factFilter)) {
+      if (!want) continue;
+      const got = j.facts?.[k as keyof Facts];
+      if (!got) unstated = true;
+      else if (got !== want) return "no";
+    }
+    if (salaryOnly && !j.facts?.salary) unstated = true;
+    return unstated ? "unstated" : "yes";
+  };
+  const filtering = salaryOnly || Object.values(factFilter).some(Boolean);
+  const listed = s.jobs
     .filter((j) => {
       if (filter === "inbox") return unreadIds.has(j.id);
       if (filter === "strong") return (j.match?.score ?? 0) >= prefs.min_score && j.status !== "skipped" && j.status !== "archived";
@@ -1069,7 +1110,25 @@ export default function Home() {
     .filter((j) => !hideExpired || !(j.expired || j.unlisted_since) || filter === "saved")
     .filter((j) =>
       `${j.title} ${j.company} ${j.location} ${j.source}`.toLowerCase().includes(query.toLowerCase()),
-    )
+    );
+  const verdicts = new Map(listed.map((j) => [j.id, factVerdict(j)]));
+  const unstated = listed.filter((j) => verdicts.get(j.id) === "unstated").length;
+  // The map shows every country in the current view; picking one narrows the list to it.
+  const mapped = listed.filter((j) => verdicts.get(j.id) === "yes" || (unstatedToo && verdicts.get(j.id) === "unstated"));
+  const points: MapPoint[] = Object.values(
+    mapped.reduce<Record<string, MapPoint>>((acc, j) => {
+      const f = j.facts;
+      if (!f?.country || f.lat == null || f.lng == null) return acc;
+      const p = (acc[f.country] ??= { country: f.country, lat: f.lat, lng: f.lng, count: 0, best: null });
+      p.count += 1;
+      if (j.match && (p.best == null || j.match.score > p.best)) p.best = j.match.score;
+      return acc;
+    }, {}),
+  ).sort((a, b) => b.count - a.count);
+  const remoteOnly = mapped.filter((j) => !j.facts?.country && j.facts?.work === "Remote").length,
+    unplaced = mapped.filter((j) => !j.facts?.country && j.facts?.work !== "Remote").length;
+  const visible = mapped
+    .filter((j) => !country || j.facts?.country === country)
     .sort((a, b) =>
       sort === "newest"
         ? (b.posted || b.created || "").localeCompare(a.posted || a.created || "")
@@ -1078,15 +1137,22 @@ export default function Home() {
     );
   const jobs = visible.slice(0, limit);
   const job = detail && detail.id === selected ? detail : s.jobs.find((j) => j.id === selected) ?? null;
-  const decide = (j: Job, status: string) =>
+  const decide = (j: Job, status: string, message: string | undefined = "Job updated") =>
     act(
       "decision",
       async () => {
-        track(status === "saved" ? "job_saved" : status === "skipped" ? "job_skipped" : status === "applied" ? "job_marked_applied" : "job_status_changed", { score: j.match?.score ?? null, source: j.source, status, from: j.status });
+        track(status === "saved" ? "job_saved" : status === "skipped" ? "job_skipped" : status === "applied" ? "job_marked_applied" : "job_status_changed", { score: j.match?.score ?? null, source: j.source, status, from: j.status, view });
         await call(`/jobs/${j.id}/decision`, "PUT", { status });
       },
-      "Job updated",
+      message,
     );
+  const showView = (v: string) => {
+    setView(v);
+    track("jobs_view", { view: v });
+    try {
+      localStorage.setItem("jfa-view", v);
+    } catch {}
+  };
   const prepare = (j: Job) =>
     act(
       "prepare",
@@ -1400,8 +1466,91 @@ export default function Home() {
                       Mark all read <Check size={15} />
                     </button>
                   )}
+                  <div className="view-switch" role="group" aria-label="View">
+                    {VIEWS.map(([v, l]) => (
+                      <button key={v} className={view === v ? "active" : ""} aria-pressed={view === v} onClick={() => showView(v)}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                {jobs.length ? (
+                <div className="detail-filters">
+                  {FACT_FILTERS.map(([k, label, options]) => (
+                    <select
+                      key={k}
+                      aria-label={label}
+                      value={factFilter[k] ?? ""}
+                      onChange={(e) => {
+                        setFactFilter({ ...factFilter, [k]: e.target.value });
+                        setLimit(PAGE);
+                        if (e.target.value) track("jobs_filtered", { detail: k, value: e.target.value });
+                      }}
+                    >
+                      <option value="">{label}: any</option>
+                      {options.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  ))}
+                  <label className="channel-row" style={{ gap: 8 }}>
+                    <Checkbox checked={salaryOnly} onCheckedChange={(v) => setSalaryOnly(v === true)} />
+                    <span className="muted-text">Salary stated</span>
+                  </label>
+                  {country && (
+                    <button className="tag" onClick={() => setCountry("")} aria-label={`Show all countries, not only ${country}`}>
+                      {country} <X size={13} />
+                    </button>
+                  )}
+                  {filtering && unstated > 0 && (
+                    <label className="channel-row" style={{ gap: 8 }}>
+                      <Checkbox checked={unstatedToo} onCheckedChange={(v) => setUnstatedToo(v === true)} />
+                      <span className="muted-text">
+                        Include {unstated} that {unstated === 1 ? "does" : "do"} not say
+                      </span>
+                    </label>
+                  )}
+                </div>
+                {view === "map" ? (
+                  <>
+                    <Suspense fallback={<p className="muted-text">Loading the map…</p>}>
+                      <JobMap
+                        points={points}
+                        onPick={(c) => {
+                          setCountry(c);
+                          showView("list");
+                        }}
+                      />
+                    </Suspense>
+                    <p className="field-help">
+                      {points.length ? `${mapped.length - remoteOnly - unplaced} jobs in ${points.length} ${points.length === 1 ? "country" : "countries"}` : "No jobs in this view name a country we recognise"}
+                      {remoteOnly ? ` · ${remoteOnly} remote with no country` : ""}
+                      {unplaced ? ` · ${unplaced} without a recognised location` : ""}. Countries are placed at their centre, not at the office.
+                    </p>
+                    <div className="focus-tags">
+                      {points.map((p) => (
+                        <button
+                          key={p.country}
+                          className="tag"
+                          onClick={() => {
+                            setCountry(p.country);
+                            showView("list");
+                          }}
+                        >
+                          {p.country} · {p.count}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : view === "cards" ? (
+                  <SwipeDeck
+                    jobs={visible.filter((j) => !inPipeline(j.status) && j.status !== "skipped" && j.status !== "archived")}
+                    minScore={prefs.min_score}
+                    decide={(j, status) => decide(j, status, undefined)}
+                    open={setSelected}
+                  />
+                ) : jobs.length ? (
                   jobs.map((j) => (
                     <article className="job-card" key={j.id}>
                       <div className="job-top">
@@ -1439,6 +1588,9 @@ export default function Home() {
                         <span>{j.location}</span>
                         <span>{j.source}</span>
                         {j.keyword_sample && <span>Outside your keywords</span>}
+                        {[j.facts?.work, j.facts?.seniority, j.facts?.contract].filter(Boolean).map((x) => (
+                          <span key={x}>{x}</span>
+                        ))}
                         {j.posted && <span>Posted {date(j.posted, "")}</span>}
                         <span className={j.expired || j.unlisted_since ? "danger-text" : ""}>
                           {j.expired ? "Closed · " : j.unlisted_since ? "No longer listed · " : ""}
@@ -1470,10 +1622,10 @@ export default function Home() {
                         <Check size={13} />
                       </span>
                     </div>
-                    <h2>{query ? "No jobs match your search." : filter === "inbox" ? "No new matches waiting." : "Your next opportunity starts here."}</h2>
+                    <h2>{query || filtering || country ? "No jobs match your search and filters." : filter === "inbox" ? "No new matches waiting." : "Your next opportunity starts here."}</h2>
                     <p>
-                      {query
-                        ? "Try a different title, employer, or location."
+                      {query || filtering || country
+                        ? `Try a different title, employer, or location, or loosen the filters.${filtering && unstated && !unstatedToo ? ` ${unstated} postings in this view do not say; include them above.` : ""}`
                         : filter === "inbox"
                           ? "Matches above your threshold appear here after each search."
                           : s.catalog_starter && !s.sources.length
@@ -1494,7 +1646,7 @@ export default function Home() {
                     )}
                   </div>
                 )}
-                {visible.length > limit && (
+                {view === "list" && visible.length > limit && (
                   <button className="button secondary full" onClick={() => setLimit(limit + PAGE)}>
                     Show more ({visible.length - limit} remaining)
                   </button>

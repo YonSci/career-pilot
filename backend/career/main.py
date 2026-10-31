@@ -56,6 +56,7 @@ from . import billing
 from . import growth
 from . import channel
 from . import collector
+from . import posting_facts
 from . import sources
 from . import public_site
 from .ai import server_key_usage
@@ -196,6 +197,7 @@ def job_summary(row):
         "id": row.id,
         **data,
         "description_preview": description[:280],
+        "facts": posting_facts.cached((row.id, row.updated), row.data),
         "expired": expired(row.data),
         "updated": row.updated,
     }
