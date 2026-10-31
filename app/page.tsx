@@ -266,6 +266,11 @@ type CatalogFeeds = {
   member_feeds_read: number;
   member_feeds_failing: number;
 };
+// The owner's blind relevance labels for validating JEV and the AI evaluation.
+type Bench = {
+  progress: { size: number; sampled: number; labelled: number; relevant: number; unsure: number };
+  job: null | { id: string; title: string; company: string; location: string; url: string; deadline: string | null; description: string };
+};
 const FEED_KINDS = ["reliefweb", "greenhouse", "lever", "workable", "smartrecruiters", "ashby"];
 type Referrals = { invites: { code: string; link: string; used: boolean; joined_name?: string | null; joined_at?: string | null }[]; referred: number };
 type EmployerPostRow = { id: string; title: string; company: string; location: string; url: string; deadline?: string | null; contact_name: string; contact_email: string; note: string; status: string; created: string; featured_until?: string };
@@ -828,6 +833,7 @@ export default function Home() {
     [inviteCount, setInviteCount] = useState(5),
     [inviteNote, setInviteNote] = useState(""),
     [feedKind, setFeedKind] = useState("greenhouse"),
+    [bench, setBench] = useState<Bench | null>(null),
     [feedValue, setFeedValue] = useState(""),
     [newCodes, setNewCodes] = useState<string[]>([]);
   const refresh = useCallback(async () => {
@@ -1146,6 +1152,14 @@ export default function Home() {
       },
       message,
     );
+  const labelBench = async (relevant: boolean | null) => {
+    if (!bench?.job) return;
+    try {
+      setBench(await call<Bench>(`/admin/benchmark/${bench.job.id}`, "PUT", { relevant }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save the label");
+    }
+  };
   const showView = (v: string) => {
     setView(v);
     track("jobs_view", { view: v });
@@ -2844,6 +2858,61 @@ export default function Home() {
                       ))}
                     </section>
                   )}
+                  <section className="panel">
+                    <h2>
+                      <ShieldCheck size={18} /> Blind JEV benchmark
+                    </h2>
+                    <p className="field-help">
+                      Label postings from your own workspace as relevant to your CV or not. No score is shown, so your labels are independent of JEV and the AI
+                      evaluation; <code>python -m career.jev_report</code> measures both against them. The sample of 60 is spread across low, middle and high JEV scores.
+                    </p>
+                    {!bench ? (
+                      <button className="button secondary" disabled={!!busy} onClick={() => act("bench", async () => setBench(await call<Bench>("/admin/benchmark")))}>
+                        Start labelling
+                      </button>
+                    ) : (
+                      <>
+                        <p className="muted-text">
+                          {bench.progress.labelled} of {bench.progress.sampled} labelled · {bench.progress.relevant} relevant
+                          {bench.progress.unsure ? ` · ${bench.progress.unsure} could not judge` : ""}
+                        </p>
+                        {bench.job ? (
+                          <div className="bench-job">
+                            <strong>{bench.job.title}</strong>
+                            <p className="muted-text">
+                              {bench.job.company || "Employer not specified"} · {bench.job.location}
+                              {bench.job.url && (
+                                <>
+                                  {" · "}
+                                  <a href={bench.job.url} target="_blank" rel="noreferrer">
+                                    Open posting
+                                  </a>
+                                </>
+                              )}
+                            </p>
+                            <div className="bench-text">{bench.job.description}</div>
+                            <div className="button-row">
+                              <button className="button primary" onClick={() => labelBench(true)}>
+                                Relevant to my CV
+                              </button>
+                              <button className="button secondary" onClick={() => labelBench(false)}>
+                                Not relevant
+                              </button>
+                              <button className="text-button" onClick={() => labelBench(null)}>
+                                Can't judge
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="field-help">
+                            {bench.progress.sampled
+                              ? "Every sampled posting is labelled. Run python -m career.jev_report to see the results."
+                              : "No postings in your own workspace have a current JEV score yet. Run a search with JEV on, then come back."}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </section>
                   <section className="panel">
                     <h2>
                       <Megaphone size={18} /> Telegram channel

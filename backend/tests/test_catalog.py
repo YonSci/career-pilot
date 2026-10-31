@@ -3,7 +3,7 @@
 from datetime import datetime, timezone, timedelta
 from career import catalog, catalog_report
 from career.config import settings
-from career.db import Record, Session, SYSTEM, User, put
+from career.db import Record, Session, SYSTEM, User, put, read
 from tests.conftest import signup_member
 from tests.test_workflow import JOB
 
@@ -33,7 +33,7 @@ def test_catalog_stores_approved_postings_once_including_keyword_rejected(client
     search(client, monkeypatch)
     stored = catalog_rows()
     assert set(stored) == {"https://example.org/jobs/gh-1", "https://example.org/jobs/gh-2", "https://example.org/jobs/rw-1"}
-    assert set(stored["https://example.org/jobs/gh-1"]) <= set(catalog.PUBLIC_FIELDS) | {"first_seen", "last_seen"}
+    assert set(stored["https://example.org/jobs/gh-1"]) <= set(catalog.PUBLIC_FIELDS) | {"first_seen", "last_seen", "feeds"}
     owner_jobs = {j["url"] for j in client.get("/api/state").json()["jobs"]}
     assert "https://example.org/jobs/gh-2" not in owner_jobs  # rejected by keywords, yet in the catalog
 
@@ -99,10 +99,10 @@ def test_members_without_sources_get_starter_results_from_the_catalog(client, mo
     fresh = {**JOB, "source": "ReliefWeb", "url": "https://example.org/jobs/fresh"}
     put_posting(fresh)
     put_posting({**JOB, "source": "Greenhouse", "url": "https://example.org/jobs/cleaner", "title": "Office cleaner", "description": "Cleaning offices daily."})
-    # Greenhouse was fetched today without listing this one for over a week: it has left its source.
-    put_posting({**JOB, "source": "Greenhouse", "url": "https://example.org/jobs/stale"}, days_ago=catalog.GONE_AFTER_DAYS + 1)
+    # Its board was read today without listing this one for over a week: it has left its source.
+    put_posting({**JOB, "source": "Greenhouse", "url": "https://example.org/jobs/stale", "feeds": ["feed:greenhouse:board"]}, days_ago=catalog.GONE_AFTER_DAYS + 1)
     with Session() as db:
-        put(db, "catalog-fetch", "catalog-fetch:Greenhouse", {"at": datetime.now(timezone.utc).isoformat()}, user_id=SYSTEM)
+        put(db, "catalog-fetch", "catalog-fetch:feed:greenhouse:board", {"at": datetime.now(timezone.utc).isoformat(), "complete": True}, user_id=SYSTEM)
     put_posting({**JOB, "source": "Greenhouse", "url": "https://example.org/jobs/closed", "deadline": "2020-01-01"})
 
     member = signup_member(client)
@@ -200,7 +200,48 @@ def test_postings_missing_from_a_week_of_fetches_are_not_evaluated_or_alerted(cl
 
 def test_a_pause_in_fetching_never_retires_postings(client):
     stale = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-    posting = {"source": "ReliefWeb", "last_seen": stale}
-    assert catalog.is_gone(posting, {}) is False  # source never fetched since
-    assert catalog.is_gone(posting, {"ReliefWeb": stale}) is False  # fetched last when it was listed
-    assert catalog.is_gone(posting, {"ReliefWeb": datetime.now(timezone.utc).isoformat()}) is True
+    today = datetime.now(timezone.utc).isoformat()
+    posting = {"source": "ReliefWeb", "last_seen": stale, "feeds": ["feed:a"]}
+    assert catalog.is_gone(posting, {}) is False  # feed never read since
+    assert catalog.is_gone(posting, {"feed:a": {"at": stale, "complete": True}}) is False  # read last when it was listed
+    assert catalog.is_gone(posting, {"feed:a": {"at": today, "complete": True}}) is True
+    # Collected before feeds were recorded: never retired by this rule.
+    assert catalog.is_gone({"source": "ReliefWeb", "last_seen": stale}, {"ReliefWeb": {"at": today}}) is False
+
+
+def test_another_feed_of_the_same_kind_never_retires_a_posting(client):
+    # One Greenhouse board being read says nothing about another board's postings.
+    stale = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    today = datetime.now(timezone.utc).isoformat()
+    posting = {"source": "Greenhouse", "last_seen": stale, "feeds": ["feed:greenhouse:acme"]}
+    assert catalog.is_gone(posting, {"feed:greenhouse:other": {"at": today, "complete": True}, "Greenhouse": {"at": today}}) is False
+    # Listed by two feeds: gone only when both have stopped listing it.
+    both = {**posting, "feeds": ["feed:a", "feed:b"]}
+    assert catalog.is_gone(both, {"feed:a": {"at": today, "complete": True}, "feed:b": {"at": stale, "complete": True}}) is False
+
+
+def test_a_capped_search_only_vouches_for_postings_inside_its_window(client):
+    # ReliefWeb returns a search's newest postings: an older open posting drops out of the window.
+    stale = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    today = datetime.now(timezone.utc).isoformat()
+    clock = {"feed:rw": {"at": today, "complete": False, "oldest": "2026-10-20T00:00:00+00:00"}}
+    older = {"source": "ReliefWeb", "last_seen": stale, "posted": "2026-10-01T00:00:00+00:00", "feeds": ["feed:rw"]}
+    newer = {**older, "posted": "2026-10-25T00:00:00+00:00"}
+    assert catalog.is_gone(older, clock) is False and catalog.is_gone(newer, clock) is True
+    assert catalog.is_gone({**older, "posted": None}, clock) is False
+
+
+def test_reads_record_their_feed_and_whether_they_were_complete(client):
+    from career import collector
+    from career.sources import RELIEFWEB_LIMIT
+
+    rw = {**JOB, "source": "ReliefWeb", "url": "https://example.org/jobs/rw-1", "posted": "2026-10-25T00:00:00+00:00"}
+    catalog.record([rw], "feed:rw", collector.complete_read("reliefweb", [rw] * RELIEFWEB_LIMIT, None))
+    # A board that now lists nothing still counts as read, so its postings can be retired.
+    catalog.record([], "feed:empty", True)
+    with Session() as db:
+        clocks = catalog.last_fetches(db)
+        assert read(db, catalog.posting_key(rw), user_id=SYSTEM)["feeds"] == ["feed:rw"]
+    assert clocks["feed:rw"]["complete"] is False and clocks["feed:rw"]["oldest"] == rw["posted"]
+    assert clocks["feed:empty"]["complete"] is True and clocks["feed:empty"]["oldest"] is None
+    assert collector.complete_read("reliefweb", [rw], None) is True

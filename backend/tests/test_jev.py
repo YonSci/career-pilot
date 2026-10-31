@@ -227,6 +227,28 @@ def test_monthly_token_cap_stops_scoring(client, monkeypatch):
         raise AssertionError("expected JevCapReached")
 
 
+def test_calls_in_flight_count_against_the_monthly_cap(client, monkeypatch):
+    # Postings are scored on parallel threads: a call that starts while another is
+    # still waiting for its answer must see that one's tokens.
+    started = []
+
+    def system_one(state, questions):
+        started.append(state["job"]["title"])
+        if len(started) == 1:
+            try:
+                score_job(profile, GIS, {})
+            except jev.JevCapReached:
+                started.append("refused")
+        return SimpleNamespace(scores={n: SimpleNamespace(score=2, confidence=0.9) for n in questions},
+                               model="jev-2026-10", usage=SimpleNamespace(input_tokens=1000))
+
+    monkeypatch.setattr(jev, "client", lambda: SimpleNamespace(system_one=system_one))
+    monkeypatch.setattr(settings, "jev_monthly_tokens", jev.PROMPT_TOKENS)
+    profile = {"facts": [{"id": "F1", "category": "Role", "text": "Built Python climate pipelines.", "verified": True}]}
+    score_job(profile, JOB, {})
+    assert started == [JOB["title"], "refused"] and jev._in_flight["tokens"] == 0
+
+
 def test_backfill_rescores_evaluated_postings_after_a_rubric_change(client, monkeypatch, capsys):
     from career import jev_backfill, jev_report
 
@@ -267,3 +289,32 @@ def test_jev_scores_are_shown_to_the_owner_only_unless_jev_show_all(client, monk
     assert seen() == (True, True)
     monkeypatch.setattr(settings, "jev_show", "off")
     assert seen() == (False, False)
+
+
+def test_owner_labels_a_blind_sample_and_the_report_measures_against_it(client, monkeypatch, capsys):
+    from career import jev_report
+    from tests.conftest import signup_member
+
+    scores = {SENIOR["title"]: (10, 0.9), JOB["title"]: (80, 0.9), GIS["title"]: (20, 0.3)}
+    search_with(client, monkeypatch, "shadow", scores, budget=3)
+    member = signup_member(client)
+    assert member.get("/api/admin/benchmark").status_code == 403
+
+    view = client.get("/api/admin/benchmark").json()
+    assert view["progress"]["sampled"] == 3 and view["progress"]["labelled"] == 0
+    seen = []
+    while view["job"]:
+        job = view["job"]
+        # Blind: no score of either model reaches the labeller.
+        assert not {"jev", "match", "score"} & set(job)
+        seen.append(job["title"])
+        relevant = {JOB["title"]: True, SENIOR["title"]: False}.get(job["title"])
+        view = client.put(f"/api/admin/benchmark/{job['id']}", json={"relevant": relevant}).json()
+    assert sorted(seen) == sorted(scores) and view["progress"] == {"size": 60, "sampled": 3, "labelled": 2, "relevant": 1, "unsure": 1}
+
+    jev_report.main([])
+    out = capsys.readouterr().out
+    assert "Blind benchmark (owner's labels in the Cohort tab, no scores shown): 2 labelled, 1 relevant" in out
+    assert "relevant postings rank mode would keep: 1/1" in out
+    assert "Confidence calibration" in out and "Funnel: catalog postings" in out
+    assert "JEV_MODEL=jev-latest is a moving alias" in out

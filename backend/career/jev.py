@@ -63,6 +63,12 @@ QUESTIONS = {
 _client = None
 _client_lock = threading.Lock()
 _usage_lock = threading.Lock()
+# Estimated input tokens of JEV calls in flight. Searches score postings on several
+# threads; without this, each could pass the cap check before any had recorded its
+# usage. One process only: on Render the app runs as a single instance.
+_in_flight = {"tokens": 0}
+# The six questions and their rubrics, sent with every call on top of the state.
+PROMPT_TOKENS = 2500
 
 
 class JevCapReached(Exception):
@@ -84,6 +90,15 @@ def record_jev_tokens(tokens):
             usage["tokens"] += tokens
             usage["by_user"][uid] = usage["by_user"].get(uid, 0) + tokens
             put(db, "usage", key, usage, user_id=SYSTEM)
+
+
+def reserve(estimate):
+    """Count a call against the monthly cap before it is made: a call may start
+    while recorded usage plus calls in flight are under the cap."""
+    with _usage_lock:
+        if settings.jev_monthly_tokens and jev_usage()["tokens"] + _in_flight["tokens"] >= settings.jev_monthly_tokens:
+            raise JevCapReached()
+        _in_flight["tokens"] += estimate
 
 
 def client():
@@ -136,15 +151,19 @@ def score_job(profile, job, prefs):
     state = jev_state(profile, job, prefs)
     if not state["verified_facts"]:
         raise ValueError("Verified CV evidence is required.")
-    if settings.jev_monthly_tokens and jev_usage()["tokens"] >= settings.jev_monthly_tokens:
-        raise JevCapReached()
-    response = client().system_one(
-        state=state,
-        questions={
-            name: Score(instructions=GROUNDING + " " + question, criteria=rubric)
-            for name, (question, rubric) in QUESTIONS.items()
-        },
-    )
+    estimate = PROMPT_TOKENS + len(json.dumps(state, ensure_ascii=False)) // 4
+    reserve(estimate)
+    try:
+        response = client().system_one(
+            state=state,
+            questions={
+                name: Score(instructions=GROUNDING + " " + question, criteria=rubric)
+                for name, (question, rubric) in QUESTIONS.items()
+            },
+        )
+    finally:
+        with _usage_lock:
+            _in_flight["tokens"] -= estimate
     dimensions = {}
     for name, (_, rubric) in QUESTIONS.items():
         answer = response.scores[name]

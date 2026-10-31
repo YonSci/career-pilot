@@ -517,6 +517,21 @@ h1 {
   gap: 4px;
   cursor: pointer;
 }
+.bench-job {
+  border: 1px solid #dfe6ec;
+  border-radius: 9px;
+  padding: 16px;
+  margin-top: 8px;
+}
+.bench-text {
+  max-height: 320px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #42505d;
+  margin: 10px 0 14px;
+}
 .job-map {
   height: 460px;
   border: 1px solid #dfe6ec;

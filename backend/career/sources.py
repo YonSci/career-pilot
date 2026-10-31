@@ -462,6 +462,10 @@ def remotive(client, value, ctx):
 RELIEFWEB_DEFAULT_QUERY = 'climate OR hydrology OR GIS OR geospatial OR "data science" OR "machine learning" OR agriculture OR "remote sensing"'
 
 
+# A ReliefWeb search returns at most its newest RELIEFWEB_LIMIT postings.
+RELIEFWEB_LIMIT = 100
+
+
 def reliefweb(client, value, ctx):
     query = (value or RELIEFWEB_DEFAULT_QUERY).strip()
     if settings.reliefweb_appname:
@@ -475,7 +479,7 @@ def reliefweb_api(client, query, ctx):
         params={
             "appname": settings.reliefweb_appname,
             "fields[include][]": ["title", "body", "url", "date", "country", "source", "type", "how_to_apply", "city"],
-            "limit": 100,
+            "limit": RELIEFWEB_LIMIT,
             "sort[]": "date.created:desc",
             "query[value]": query,
             "query[fields][]": ["title", "body"],

@@ -4,6 +4,10 @@ whether rank mode would drop good postings. Read-only.
     python -m career.jev_report          (on Render: Shell tab, from /app)
     python -m career.jev_report --models (the models the JEV account can use)
 
+It covers the whole funnel (catalog, keywords, JEV, LLM, members' decisions),
+how far JEV confidence can be trusted, recall by sector, cost per good match,
+and the owner's blind benchmark labels (Cohort tab), which neither model saw.
+
 Only scores from the current rubric are compared; after a rubric or model
 change, python -m career.jev_backfill rescores postings the LLM evaluated.
 """
@@ -11,7 +15,8 @@ change, python -m career.jev_backfill rescores postings the LLM evaluated.
 import sys
 from collections import Counter
 from .config import settings
-from .db import Session, Record, read
+from .db import Session, Record, SYSTEM, read
+from .public_jobs import sector_of
 from .schemas import Preferences, APPLICATION_STAGES
 from . import jev as scoring
 from .jev import client, held, jev_usage
@@ -45,6 +50,7 @@ def spearman(xs, ys):
 # independent of members' own minimum scores (which few postings reach).
 GOOD_LLM_SCORE = 60
 SWEEP_CUTOFFS = (20, 25, 30, 35, 40)
+CONFIDENCE_BANDS = ((0.0, 0.4), (0.4, 0.6), (0.6, 0.8), (0.8, 1.01))
 
 
 def kept(jev, job, cutoff=None):
@@ -86,7 +92,10 @@ def main(argv=None):
     # LLM scores of postings the keywords kept, and of the keyword-rejected sample.
     keyword_kept, keyword_rejected = [], []
     tokens, older, models = 0, 0, Counter()
+    # labelled: (jev, job, relevant, LLM score or None) from the owner's blind benchmark.
+    labelled, funnel = [], Counter()
     with Session() as db:
+        funnel["catalog"] = db.query(Record).filter_by(user_id=SYSTEM, kind="posting").count()
         min_scores = {}
         for row in db.query(Record).filter_by(kind="job").all():
             match = row.data.get("match") or {}
@@ -94,6 +103,9 @@ def main(argv=None):
                 (keyword_rejected if row.data.get("keyword_sample") else keyword_kept).append(match["score"])
             if row.data.get("keyword_sample"):
                 continue  # not chosen by keywords, so kept out of the JEV comparison
+            funnel["jobs"] += 1
+            funnel["chosen"] += row.data.get("status") in ("saved", *APPLICATION_STAGES)
+            funnel["progressed"] += row.data.get("status") in ("interview", "offer")
             jev = row.data.get("jev")
             if not jev:
                 continue
@@ -112,6 +124,9 @@ def main(argv=None):
                 (sampled if jev.get("sample") else evaluated).append(entry)
             if row.data.get("status") in ("saved", "skipped", *APPLICATION_STAGES):
                 decided.append((jev, row.data))
+            mark = row.data.get("benchmark") or {}
+            if "relevant" in mark:
+                labelled.append((jev, row.data, mark["relevant"], match["score"] if match.get("mode") == "ai" else None))
 
     def count(items, test):
         return sum(1 for item in items if test(item))
@@ -129,6 +144,11 @@ def main(argv=None):
     print(f"JEV input tokens this month: {usage}" + (f" of {settings.jev_monthly_tokens}" if settings.jev_monthly_tokens else " (no cap)"))
     print(f"Postings with a current (rubric {scoring.RUBRIC_VERSION}) JEV score: {len(scored)}, input tokens {tokens}")
     print("Models that answered: " + (", ".join(f"{m} ({n})" for m, n in models.most_common()) or "n/a"))
+    if settings.jev_model.endswith("latest"):
+        print(f"  Warning: JEV_MODEL={settings.jev_model} is a moving alias. Pin a dated model (see --models) before validating,")
+        print("  so a provider update cannot change scores mid-comparison.")
+    if len(models) > 1:
+        print("  Warning: scores come from more than one model; rescore with python -m career.jev_backfill to compare like with like.")
     if older:
         print(f"Scores from an older rubric, ignored: {older}. Run python -m career.jev_backfill to rescore evaluated postings.")
     print(f"Rank mode would send to the LLM: {share(count(scored, lambda s: kept(*s)), len(scored))} of all scored postings")
@@ -161,6 +181,43 @@ def main(argv=None):
         keeps = share(count(good, lambda e: kept(e[0], e[1], cut)), len(good))
         current = " (current)" if cut == settings.jev_min_score else ""
         print(f"  JEV_MIN_SCORE={cut}: sends {sends_all} of all scored, {sends_evaluated} of evaluated; keeps {keeps} good matches{current}")
+
+    print(f"Confidence calibration (normal queue; good = LLM >= {GOOD_LLM_SCORE}; JEV-low = below JEV_MIN_SCORE={settings.jev_min_score}):")
+    for low, high in CONFIDENCE_BANDS:
+        band = [e for e in evaluated if low <= e[0]["confidence"] < high]
+        lows = [e for e in band if e[0]["score"] < settings.jev_min_score]
+        agree = count(band, lambda e: (e[0]["score"] >= settings.jev_min_score) == (e[2] >= GOOD_LLM_SCORE))
+        print(f"  confidence {low:.1f}-{min(high, 1.0):.1f}: {len(band)} postings, agrees with the LLM {share(agree, len(band))}; "
+              f"good matches among JEV-low {share(count(lows, lambda e: e[2] >= GOOD_LLM_SCORE), len(lows), True)}")
+    print(f"  Rank mode holds only JEV-low postings with confidence >= {settings.jev_confident}: those bands should show few good matches.")
+
+    sectors, kept_in = Counter(), Counter()
+    for e in good:
+        for sector in sector_of(e[1].get("title")) or ["other"]:
+            sectors[sector] += 1
+            kept_in[sector] += kept(e[0], e[1])
+    print("Good matches rank mode would keep, by field of the title: " + (", ".join(f"{s} {share(kept_in[s], n)}" for s, n in sectors.most_common()) or "n/a"))
+
+    llm_calls = len(evaluated) + len(sampled)
+    if good:
+        print(f"Cost per good match: {llm_calls / len(good):.1f} LLM evaluations and {tokens / len(good):,.0f} JEV input tokens")
+    if chosen:
+        print(f"Cost per saved or applied posting: {llm_calls / len(chosen):.1f} LLM evaluations")
+
+    relevant = [b for b in labelled if b[2]]
+    other = [b for b in labelled if not b[2]]
+    print(f"Blind benchmark (owner's labels in the Cohort tab, no scores shown): {len(labelled)} labelled, {len(relevant)} relevant")
+    if labelled:
+        rated = [b for b in relevant if b[3] is not None]
+        rated_other = [b for b in other if b[3] is not None]
+        print(f"  relevant postings rank mode would keep: {share(count(relevant, lambda b: kept(b[0], b[1])), len(relevant), True)}")
+        print(f"  relevant postings the LLM rated good: {share(count(rated, lambda b: b[3] >= GOOD_LLM_SCORE), len(rated), True)}")
+        print(f"  not-relevant postings the LLM rated good: {share(count(rated_other, lambda b: b[3] >= GOOD_LLM_SCORE), len(rated_other))}; "
+              f"rank mode would hold {share(count(other, lambda b: not kept(b[0], b[1])), len(other))}")
+
+    print(f"Funnel: catalog postings {funnel['catalog']} -> members' jobs (kept by keywords) {funnel['jobs']} -> JEV-scored {len(scored)} "
+          f"-> rank mode would send {count(scored, lambda s: kept(*s))} -> LLM-evaluated {len(keyword_kept)} "
+          f"-> good {sum(1 for s in keyword_kept if s >= GOOD_LLM_SCORE)} -> saved or applied {funnel['chosen']} -> interview or offer {funnel['progressed']}")
     print("Target before switching to rank mode: at least 95% of strong and of saved/applied postings kept,")
     print("with few good matches in the random sample. Small samples leave wide intervals; read them, not just the share.")
 

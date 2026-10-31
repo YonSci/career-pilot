@@ -58,35 +58,48 @@ def twin_of(db, job):
     return None
 
 
-def record(jobs):
-    """Store or refresh a source's postings in the catalog. Never raises: the
-    catalog must not break a member's search."""
+def seen_in(posting, stamp, feed):
+    """The posting, listed now by `feed` (a feed key, or None when unknown)."""
+    feeds = sorted({*(posting.get("feeds") or []), feed}) if feed else posting.get("feeds")
+    return {**posting, "last_seen": stamp, **({"feeds": feeds} if feeds else {})}
+
+
+def record(jobs, feed=None, complete=True):
+    """Store or refresh one read of a source in the catalog. Never raises: the
+    catalog must not break a member's search.
+
+    `feed` is the read's feed key (collector.feed_key); `complete` is False when
+    the read may have left postings out (a search capped at its newest results,
+    or a read cut short by the time budget). Retention relies on both."""
     if not settings.catalog_enabled:
         return
     eligible = [j for j in jobs if j.get("source") in CATALOG_SOURCES and j.get("url") and not j.get("partial")]
     # Postings a fetch listed but did not read again because the reader already had them.
     listed = [j for j in jobs if j.get("partial") and j.get("url")]
-    if not eligible and not listed:
+    if not eligible and not listed and not feed:
         return
     try:
         with _lock, Session() as db:
             stamp = now()
             sources = {j["source"] for j in eligible}
+            dates = []
             for job in listed:
                 key = posting_key(job)
                 existing = read(db, key, None, user_id=SYSTEM)
                 if existing:
-                    put(db, "posting", key, {**existing, "last_seen": stamp}, user_id=SYSTEM)
+                    put(db, "posting", key, seen_in(existing, stamp, feed), user_id=SYSTEM)
                     sources.add(existing.get("source"))
+                    dates.append(existing.get("posted"))
             for job in eligible:
+                dates.append(job.get("posted"))
                 key = posting_key(job)
                 existing = read(db, key, None, user_id=SYSTEM)
                 if existing is None and (twin := twin_of(db, job)):
-                    put(db, "posting", twin, {**read(db, twin, user_id=SYSTEM), "last_seen": stamp}, user_id=SYSTEM)
+                    put(db, "posting", twin, seen_in(read(db, twin, user_id=SYSTEM), stamp, feed), user_id=SYSTEM)
                     continue
                 existing = existing or {}
                 facts = {k: job[k] for k in PUBLIC_FIELDS if job.get(k) is not None}
-                put(db, "posting", key, {**existing, **facts, "first_seen": existing.get("first_seen", stamp), "last_seen": stamp}, user_id=SYSTEM)
+                put(db, "posting", key, seen_in({**existing, **facts, "first_seen": existing.get("first_seen", stamp)}, stamp, feed), user_id=SYSTEM)
                 if not existing:
                     from .service import body_hash
 
@@ -94,7 +107,12 @@ def record(jobs):
                     index = "posting-body:" + body_hash(job.get("description") or "")
                     if read(db, index, None, user_id=SYSTEM) is None:
                         put(db, "posting-body", index, {"key": key}, user_id=SYSTEM)
-            # Successful fetches of each source, the clock the retention rule runs on.
+            # Each feed's latest successful read, the clock the retention rule runs on.
+            # A capped read only vouches for postings at least as new as the oldest it returned.
+            if feed:
+                dated = sorted(d for d in dates if d)
+                put(db, "catalog-fetch", "catalog-fetch:" + feed, {"at": stamp, "complete": complete, "oldest": dated[0] if dated else None}, user_id=SYSTEM)
+            # Per source too, for the report.
             for source in sources - {None}:
                 put(db, "catalog-fetch", "catalog-fetch:" + source, {"at": stamp}, user_id=SYSTEM)
             purge(db)
@@ -117,16 +135,38 @@ def has_postings(db):
 
 
 def last_fetches(db):
-    """Source name -> time of its latest successful fetch."""
-    return {r.key.removeprefix("catalog-fetch:"): r.data.get("at") for r in db.query(Record).filter_by(user_id=SYSTEM, kind="catalog-fetch").all()}
+    """Feed key (or source name) -> its latest successful read: {at, complete, oldest}."""
+    return {r.key.removeprefix("catalog-fetch:"): r.data for r in db.query(Record).filter_by(user_id=SYSTEM, kind="catalog-fetch").all()}
+
+
+def _when(stamp):
+    try:
+        d = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
 
 
 def is_gone(posting, fetches):
-    """Whether the posting's source has gone GONE_AFTER_DAYS of successful fetches without listing it."""
-    fetched, seen = fetches.get(posting.get("source")), posting.get("last_seen")
-    if not (fetched and seen):
+    """Whether every feed that listed the posting has read successfully for
+    GONE_AFTER_DAYS since without listing it. A capped read (ReliefWeb returns
+    its newest postings) counts only for postings newer than the oldest it
+    returned: older ones may simply have dropped out of its window. Postings
+    collected before feeds were recorded have none and are never retired here;
+    deadlines and the 90-day purge still apply."""
+    seen, feeds = _when(posting.get("last_seen")), posting.get("feeds") or []
+    if not (seen and feeds):
         return False
-    return datetime.fromisoformat(fetched) - datetime.fromisoformat(seen) >= timedelta(days=GONE_AFTER_DAYS)
+    for feed in feeds:
+        clock = fetches.get(feed) or {}
+        at = _when(clock.get("at"))
+        if not at or at - seen < timedelta(days=GONE_AFTER_DAYS):
+            return False
+        if not clock.get("complete"):
+            oldest, posted = _when(clock.get("oldest")), _when(posting.get("posted"))
+            if not (oldest and posted and posted >= oldest):
+                return False
+    return True
 
 
 def unlisted(db, job_keys):

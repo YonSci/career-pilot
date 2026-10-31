@@ -513,7 +513,11 @@ def _run_scan(run_id):
             try:
                 jobs, mail_ids = collect(source.data, None, ctx)
                 # Before keyword screening, so the catalog also holds postings members' keywords reject.
-                catalog.record(jobs)
+                kind, value = source.data["kind"], source.data.get("value")
+                if kind in collector.FEED_KINDS:
+                    catalog.record(jobs, collector.feed_key(kind, value), collector.complete_read(kind, jobs, ctx))
+                else:
+                    catalog.record(jobs)
                 if feed:
                     collector.mark(db, source.data["kind"], source.data.get("value"), True, received=len(jobs))
                 relevant, added = take(db, jobs, prefs, ctx, rejected)

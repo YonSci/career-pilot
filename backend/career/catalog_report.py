@@ -37,7 +37,11 @@ def main():
     size = sum(len(r.data.get("description") or "") for r in postings)
     print(f"Catalog postings: {len(postings)} ({fresh} seen in the last 7 days), descriptions {size / 1e6:.1f} MB")
     gone = sum(1 for r in postings if is_gone(r.data, fetches))
-    print(f"No longer listed at their source (retention rule): {gone}; last successful fetch: " + (", ".join(f"{s} {a[:16]}" for s, a in sorted(fetches.items())) or "none recorded yet"))
+    by_source = {s: c.get("at") or "" for s, c in fetches.items() if not s.startswith("feed:")}
+    print(f"No longer listed at their source (retention rule): {gone}; last successful fetch: " + (", ".join(f"{s} {a[:16]}" for s, a in sorted(by_source.items())) or "none recorded yet"))
+    untied = sum(1 for r in postings if not r.data.get("feeds"))
+    if untied:
+        print(f"  not yet tied to a feed (collected before per-feed tracking, never retired by the rule): {untied}")
     print("By source: " + ", ".join(f"{s} {n}" for s, n in Counter(r.data.get("source") for r in postings).most_common()))
     print(f"Kept by no member (rejected by everyone's keywords): {held.count(0)}")
     print(f"Kept by one member: {held.count(1)}; by two or more: {sum(1 for h in held if h >= 2)} (most: {max(held)})")

@@ -57,6 +57,7 @@ from . import growth
 from . import channel
 from . import collector
 from . import posting_facts
+from . import benchmark
 from . import sources
 from . import public_site
 from .ai import server_key_usage
@@ -828,6 +829,30 @@ def feeds_overview(db):
 class FeedInput(BaseModel):
     kind: str = Field(max_length=32)
     value: str = Field(default="", max_length=500)
+
+
+class BenchmarkLabel(BaseModel):
+    # None: the owner cannot judge this posting.
+    relevant: bool | None = None
+
+
+def benchmark_view(db):
+    job = benchmark.next_job(db)  # draws the sample first
+    return {"progress": benchmark.progress(db), "job": job}
+
+
+@app.get("/api/admin/benchmark")
+def admin_benchmark(_: User = Depends(admin), db=Depends(db_session)):
+    return benchmark_view(db)
+
+
+@app.put("/api/admin/benchmark/{id}")
+def admin_benchmark_label(id: str, body: BenchmarkLabel, _: User = Depends(admin), db=Depends(db_session)):
+    row = row_or_404(db, id, "job")
+    if not row.data.get("benchmark"):
+        raise HTTPException(404, "This job is not in the benchmark sample.")
+    benchmark.label(db, row, body.relevant)
+    return benchmark_view(db)
 
 
 @app.post("/api/admin/catalog-feeds")

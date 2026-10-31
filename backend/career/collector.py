@@ -20,7 +20,7 @@ from collections import Counter
 from datetime import datetime, timezone, timedelta
 from .config import settings
 from .db import Record, Session, SYSTEM, now, put, read
-from .sources import Context, collect, failure_message, validate_source, RELIEFWEB_DEFAULT_QUERY
+from .sources import Context, collect, failure_message, validate_source, RELIEFWEB_DEFAULT_QUERY, RELIEFWEB_LIMIT
 from . import catalog, sources
 
 log = logging.getLogger(__name__)
@@ -92,6 +92,13 @@ def due(state):
     return age is None or age >= timedelta(hours=settings.shared_fetch_hours)
 
 
+def complete_read(kind, jobs, ctx):
+    """Whether a read listed every open posting of its feed: a ReliefWeb search
+    returns only its newest RELIEFWEB_LIMIT, and the time budget can cut a read short."""
+    capped = kind == "reliefweb" and len(jobs) >= RELIEFWEB_LIMIT
+    return not capped and not (ctx and ctx.out_of_time())
+
+
 def mark(db, kind, value, ok, received=0, error=""):
     """Record one read of a feed, by the collector or a member's search."""
     key = feed_key(kind, value)
@@ -111,7 +118,7 @@ def read_feed(db, feed, ctx):
     except Exception as e:
         mark(db, feed["kind"], feed["value"], False, error=failure_message(e, feed["kind"], feed["value"]))
         raise
-    catalog.record(jobs)
+    catalog.record(jobs, feed_key(feed["kind"], feed["value"]), complete_read(feed["kind"], jobs, ctx))
     mark(db, feed["kind"], feed["value"], True, received=len(jobs))
     return jobs
 
