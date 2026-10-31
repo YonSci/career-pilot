@@ -22,7 +22,7 @@ More in [docs/screenshots](docs/screenshots/), including the full landing page a
 
 ## How it works
 
-1. **Evidence.** Upload your CV. Facts are extracted with exact source quotes. You verify each one. Only verified facts are used anywhere. **Suggest from my CV** proposes keywords and locations from them.
+1. **Evidence.** Upload your CV. Facts are extracted with exact source quotes. You verify each one. Only verified facts are used anywhere. **Suggest from my CV** proposes keywords and locations from them. **CV versions** keep up to five target roles (for example Hydrologist and Climate data scientist), each with a CV headline, keywords that are added to the search, and the facts its CV leads with; each job is matched to the version that fits it best, and its application is written for that role.
 2. **Discovery.** Public postings (ReliefWeb searches and employer boards) are kept once in a shared catalog. Members without sources of their own get recent catalog postings as starter results; the owner curates shared sources; with `CATALOG_SHARED=true` each public source is read once for everyone. On a schedule (default every 6 hours) your own enabled sources are read too. Postings are de-duplicated, screened against your keywords by word stem (so "Data Scientist" matches "data science"), and the most promising unevaluated ones are sent to the AI, up to 50 per search. A few keyword-rejected postings a month are evaluated anyway, to measure what the keywords miss. Postings that have left their source are marked **No longer listed**.
 3. **Pre-ranking (optional).** JEV scores each posting on six dimensions against your verified evidence. In shadow mode (`JEV_MODE=shadow`) scores are stored and compared with the AI's; rank mode sends the AI the most promising postings first and holds confident low scores, while a random sample of held postings is still evaluated.
 4. **Explanation.** Each evaluated posting gets a 0-100 relevance score, a summary, strengths, gaps, a table of requirements marked met / unknown / not met with the evidence IDs behind each, and what the posting states about seniority, work arrangement, authorisation, visa sponsorship, salary and contract.
@@ -143,6 +143,7 @@ Tests use a temporary SQLite database and mocked providers. No network calls, mo
 - `backend/career/service.py`: ingestion, de-duplication, search run, alerts, archiving, application workflow
 - `backend/career/catalog.py`, `collector.py`: shared catalog, retention rule, shared collection of public sources
 - `backend/career/jev.py`, `jev_report.py`, `benchmark.py`: JEV pre-ranking, its validation report, the owner's blind benchmark
+- `backend/career/cv_versions.py`: target roles over the verified evidence (search keywords, best fit per job, focus for drafting)
 - `backend/career/posting_facts.py`, `geo.py`: posting details for filters, country lookup for the map
 - `backend/career/billing.py`, `public_jobs.py`, `public_site.py`, `employers.py`: payments, the public job directory, employer listings and their self-service page
 - `backend/career/ai.py`: extraction, matching, drafting with independent review and revision
@@ -151,5 +152,5 @@ Tests use a temporary SQLite database and mocked providers. No network calls, mo
 - `backend/career/scheduler.py`: in-process scheduler and stale-run repair
 - `backend/career/documents.py`: CV import and DOCX/PDF export
 - `deployment/`: setup, Gmail and Telegram helpers, Windows task registration
-- `app/page.tsx`, `app/SwipeDeck.tsx`, `app/JobMap.tsx`: dashboard source; `dashboard/`: compiled dashboard served by the API
+- `app/page.tsx`, `app/SwipeDeck.tsx`, `app/JobMap.tsx`, `app/CvVersions.tsx`: dashboard source; `dashboard/`: compiled dashboard served by the API
 - `docs/PLAN.md`: review findings and roadmap; `docs/ARCHITECTURE.md`: data flow and limits; `docs/CATALOG_DESIGN.md`: shared catalog

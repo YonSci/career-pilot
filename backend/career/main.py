@@ -42,9 +42,9 @@ from .db import (
     current_user,
 )
 from . import auth as accounts
-from .schemas import Profile, Preferences, JobInput, SourceInput, Package, MATCH_RELEVANT_PREFERENCES
+from .schemas import Profile, Preferences, JobInput, SourceInput, Package, CVVersion, MATCH_RELEVANT_PREFERENCES
 from .documents import extract_text, package_zip
-from .ai import extract_profile, ai_available, verify_key, suggest_search
+from .ai import extract_profile, ai_available, verify_key, suggest_search, suggest_roles
 from .sources import validate_source, collect, Context, SUGGESTED_SOURCES, KIND_LABELS, imap_check
 from .service import ingest, evaluate, expired, prepare_application, run_scan
 from .notifications import availability, test_alert, send_invitation
@@ -63,6 +63,7 @@ from . import sources
 from . import public_site
 from . import employers
 from . import business
+from . import cv_versions
 from .ai import server_key_usage
 
 
@@ -1189,6 +1190,7 @@ async def admin_restore(request: Request, file: UploadFile = File(...), db=Depen
 def state(user: User = Depends(auth), db=Depends(db_session)):
     alerts = [item(r) for r in rows(db, "alert")]
     limits = accounts.plan_limits(user.plan)
+    versions = cv_versions.versions(db)
     return {
         "user": user.public(),
         "plan": {"id": user.plan, **limits, "packages_used": accounts.packages_this_month(db), "evaluations_used": accounts.evaluations_this_month(db), **billing.plan_status(user)},
@@ -1197,7 +1199,8 @@ def state(user: User = Depends(auth), db=Depends(db_session)):
         "preferences": {**Preferences().model_dump(), **read(db, "preferences", {})},
         "schedule": read(db, "schedule", {"enabled": False}),
         "scheduler": scheduler.status(),
-        "jobs": [job_summary(r) for r in rows(db, "job")],
+        "jobs": [{**job_summary(r), "cv_version_id": cv_versions.for_job(r.data, versions)} for r in rows(db, "job")],
+        "cv_versions": versions,
         "sources": [item(r) for r in rows(db, "source")],
         "applications": [item(r) for r in rows(db, "application")],
         "runs": sorted(
@@ -1219,7 +1222,7 @@ def state(user: User = Depends(auth), db=Depends(db_session)):
 @app.get("/api/jobs/{id}", dependencies=[Depends(auth)])
 def job_detail(id: str, db=Depends(db_session)):
     row = row_or_404(db, id, "job")
-    return {**job_item(row), "expired": expired(row.data)}
+    return {**job_item(row), "expired": expired(row.data), "cv_version_id": cv_versions.for_job(row.data, cv_versions.versions(db))}
 
 
 @app.post("/api/profile/upload")
@@ -1272,6 +1275,48 @@ def suggest_preferences(user: User = Depends(auth), db=Depends(db_session)):
         raise HTTPException(422, str(e))
     except Exception:
         raise HTTPException(502, "Could not suggest a search. Check the AI connection and retry.")
+
+
+class CVVersions(BaseModel):
+    items: list[CVVersion] = Field(max_length=cv_versions.MAX_VERSIONS)
+
+
+@app.put("/api/cv-versions")
+def save_cv_versions(body: CVVersions, _: User = Depends(auth), db=Depends(db_session)):
+    """Replace the member's CV versions (target roles). Unknown or unverified facts are dropped."""
+    if len({v.id for v in body.items}) != len(body.items):
+        raise HTTPException(422, "Each CV version needs its own ID.")
+    items = [{**v.model_dump(), "keywords": [k.strip() for k in v.keywords if k.strip()][:15]} for v in body.items]
+    return {"items": cv_versions.save(db, items, read(db, "profile", {}) or {})}
+
+
+@app.post("/api/cv-versions/suggest")
+def suggest_cv_versions(user: User = Depends(auth), db=Depends(db_session)):
+    """Suggest target roles from verified evidence. Nothing is saved."""
+    ai_action(user, "target role suggestion")
+    try:
+        return suggest_roles(read(db, "profile", {}) or {})
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception:
+        raise HTTPException(502, "Could not suggest target roles. Check the AI connection and retry.")
+
+
+class JobVersion(BaseModel):
+    cv_version: str | None = Field(default=None, max_length=40)
+
+
+@app.put("/api/jobs/{id}/cv-version")
+def choose_cv_version(id: str, body: JobVersion, _: User = Depends(auth), db=Depends(db_session)):
+    """Which CV version an application for this job is written for; null returns to the best fit."""
+    row = row_or_404(db, id, "job")
+    if body.cv_version and not any(v["id"] == body.cv_version for v in cv_versions.versions(db)):
+        raise HTTPException(422, "Unknown CV version.")
+    data = {k: v for k, v in row.data.items() if k != "cv_version"}
+    if body.cv_version:
+        data["cv_version"] = body.cv_version
+    put(db, "job", row.key, data)
+    return {"cv_version_id": cv_versions.for_job(data, cv_versions.versions(db))}
 
 
 def invalidate_matches(db):

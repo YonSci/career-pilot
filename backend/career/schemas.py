@@ -28,6 +28,27 @@ class SearchSuggestion(BaseModel):
     note: str
 
 
+class CVVersion(BaseModel):
+    """A target role over the member's verified evidence (cv_versions.py)."""
+    id: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=2, max_length=80)
+    headline: str = Field(default="", max_length=200)
+    keywords: list[str] = Field(default_factory=list, max_length=15)
+    fact_ids: list[str] = Field(default_factory=list, max_length=300)
+
+
+class SuggestedRole(BaseModel):
+    name: str
+    headline: str
+    keywords: list[SuggestedTerm]
+    evidence_ids: list[str]
+
+
+class RoleSuggestion(BaseModel):
+    """Target roles the verified facts support, each a starting CV version."""
+    roles: list[SuggestedRole]
+
+
 class Preferences(BaseModel):
     keywords: list[str] = Field(
         default_factory=lambda: [

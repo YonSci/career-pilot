@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from openai import OpenAI, AuthenticationError, RateLimitError
 from .config import settings
 from .db import current_user, current_user_id
-from .schemas import Profile, Fact, Match, Package, QualityReview, SearchSuggestion
+from .schemas import Profile, Fact, Match, Package, QualityReview, SearchSuggestion, RoleSuggestion
 from . import telemetry
 
 _usage_lock = threading.Lock()
@@ -225,6 +225,36 @@ def suggest_search(profile, prefs):
     return {"keywords": keywords, "locations": [l.strip() for l in s.locations if l.strip()], "note": s.note}
 
 
+def suggest_roles(profile):
+    """Propose up to three target roles the verified facts support, each with a
+    headline, search keywords and the facts to lead with. Nothing is saved."""
+    evidence = [
+        {"id": f["id"], "category": f.get("category", ""), "text": f["text"]}
+        for f in profile.get("facts", [])
+        if f.get("verified") and (f.get("category") or "").strip().lower() != "contact"
+    ]
+    if not evidence:
+        raise ValueError("Verify some CV evidence first.")
+    s = structured(
+        settings.extract_model,
+        RoleSuggestion,
+        "Propose one to three distinct target roles this candidate is qualified for, from their VERIFIED facts only, for example 'Hydrologist' and 'Climate data scientist' for someone whose facts show both. For each: name, a short job-title style name; headline, one line for the top of a CV for that role, using only what the facts state (no invented years, titles or achievements); keywords, 3 to 6 short phrases (1 to 3 words) that postings for that role contain, broad and common rather than rare, each citing the evidence_ids that support it; evidence_ids, the facts a CV for that role should lead with, most relevant first. Do not propose a role the facts do not support. Distinct roles only: two versions of the same job are one role.",
+        {"facts": evidence, "current_headline": profile.get("headline", "")},
+    )
+    ids = {f["id"] for f in evidence}
+    roles = []
+    for r in s.roles[:3]:
+        keywords = []
+        for k in r.keywords:
+            term = k.term.strip()
+            if term and term.lower() not in {t.lower() for t in keywords} and any(i in ids for i in k.evidence_ids):
+                keywords.append(term)
+        facts = [i for i in dict.fromkeys(r.evidence_ids) if i in ids]
+        if r.name.strip() and keywords and facts:
+            roles.append({"name": r.name.strip()[:80], "headline": r.headline.strip()[:200], "keywords": keywords[:6], "fact_ids": facts})
+    return {"roles": roles}
+
+
 def match_job(profile, job, prefs):
     evidence = [f for f in profile.get("facts", []) if f.get("verified")]
     if ai_available():
@@ -265,6 +295,8 @@ def match_job(profile, job, prefs):
 
 WRITE_INSTRUCTIONS = "Prepare a tailored CV, cover letter, and answers to ALL questions explicitly in the posting. Draft additional requested narrative documents (e.g. methodology) only when needed. Preserve employers, dates and qualifications. Ground all career claims in evidence_ids. No invented outcomes, metrics or responsibilities. Empty evidence_ids only for salutations, headings, motivations or future proposals making no career claims. Mark unknown personal details in missing_information, never invent them. Financial proposals need approved rates; list as missing if absent. List authentic certificates, signatures and references that the applicant must supply. Respect stated character limits. CV should retain chronological roles and select relevant evidence. Use short paragraphs; start a CV section with a one-line heading paragraph such as 'Professional experience'. All output is draft for human review."
 
+FOCUS_INSTRUCTIONS = " The candidate is applying as focus.target_role: use the given headline, lead the CV with the facts in focus.lead_with, and keep other facts where they support this posting. The focus changes emphasis only; every claim still needs verified evidence."
+
 REVIEW_INSTRUCTIONS = "Independently review this application against verified evidence. Flag unsupported career claims, invented metrics, changed employers/dates/degrees, and contradictions. A valid evidence ID alone is not proof: compare the actual text. List required application items absent from both drafts and checklist. Do not flag future proposals clearly written as proposed work. Return empty lists when no issues are found."
 
 
@@ -296,7 +328,12 @@ def write_package(profile, job, match):
         "job": job_for_model(job),
         "match": match,
     }
-    package = structured(settings.write_model, Package, WRITE_INSTRUCTIONS, context, timeout=WRITE_TIMEOUT)
+    instructions = WRITE_INSTRUCTIONS
+    if profile.get("focus"):
+        # A CV version (cv_versions.py): write for its target role.
+        context["focus"] = profile["focus"]
+        instructions += FOCUS_INSTRUCTIONS
+    package = structured(settings.write_model, Package, instructions, context, timeout=WRITE_TIMEOUT)
     validate_package(package, ids)
     review_notes = []
     for attempt in range(2):
@@ -321,7 +358,7 @@ def write_package(profile, job, match):
         package = structured(
             settings.write_model,
             Package,
-            WRITE_INSTRUCTIONS
+            instructions
             + " REVISION: an independent reviewer flagged the listed unsupported claims in the previous draft. Remove or rewrite those sentences so every career claim is directly supported by the verified facts. Keep everything else.",
             {
                 **context,

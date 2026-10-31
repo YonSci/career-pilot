@@ -1,6 +1,7 @@
 "use client";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import SwipeDeck from "./SwipeDeck";
+import CvVersions, { type CvVersion } from "./CvVersions";
 import type { MapPoint } from "./JobMap";
 import {
   BriefcaseBusiness,
@@ -104,6 +105,8 @@ const VIEWS: [string, string][] = [
 export type Job = {
   id: string;
   featured_post?: string;
+  cv_version_id?: string | null;
+  cv_version?: string;
   facts?: Facts;
   keyword_sample?: boolean;
   unlisted_since?: string;
@@ -297,6 +300,7 @@ type State = {
   preferences: Prefs;
   connections: Record<string, boolean>;
   jobs: Job[];
+  cv_versions: CvVersion[];
   applications: App[];
   sources: Source[];
   runs: Run[];
@@ -382,6 +386,7 @@ const initial: State = {
   preferences: defaults,
   connections: {},
   jobs: [],
+  cv_versions: [],
   applications: [],
   sources: [],
   runs: [],
@@ -1172,6 +1177,13 @@ export default function Home() {
     );
   const jobs = visible.slice(0, limit);
   const job = detail && detail.id === selected ? detail : s.jobs.find((j) => j.id === selected) ?? null;
+  const versionName = (id?: string | null) => (s.cv_versions ?? []).find((v) => v.id === id)?.name;
+  const chooseVersion = (j: Job, id: string) =>
+    act("version", async () => {
+      const r = await call<{ cv_version_id: string | null }>(`/jobs/${j.id}/cv-version`, "PUT", { cv_version: id || null });
+      setDetail({ ...j, cv_version: id || undefined, cv_version_id: r.cv_version_id });
+      await refresh();
+    });
   const decide = (j: Job, status: string, message: string | undefined = "Job updated") =>
     act(
       "decision",
@@ -1631,6 +1643,7 @@ export default function Home() {
                         <span>{j.location}</span>
                         <span>{j.source}</span>
                         {j.keyword_sample && <span>Outside your keywords</span>}
+                        {versionName(j.cv_version_id) && <span>CV: {versionName(j.cv_version_id)}</span>}
                         {[j.facts?.work, j.facts?.seniority, j.facts?.contract].filter(Boolean).map((x) => (
                           <span key={x}>{x}</span>
                         ))}
@@ -1875,6 +1888,31 @@ export default function Home() {
                 </div>
               )}
             </section>
+            <CvVersions
+              versions={s.cv_versions ?? []}
+              facts={profile.facts}
+              aiReady={!!s.connections.ai}
+              save={async (items) => {
+                try {
+                  await call("/cv-versions", "PUT", { items });
+                  track("cv_versions_saved", { versions: items.length });
+                  toast.success("CV versions saved");
+                  await refresh();
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "Could not save the CV versions");
+                }
+              }}
+              suggest={async () => {
+                try {
+                  const r = await call<{ roles: Omit<CvVersion, "id">[] }>("/cv-versions/suggest", "POST");
+                  if (!r.roles.length) toast.info("No distinct target roles found in your verified evidence.");
+                  return r.roles;
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "Could not suggest target roles");
+                  return [];
+                }
+              }}
+            />
           </TabsContent>
           <TabsContent value="sources">
             <div className="two-columns">
@@ -3277,6 +3315,19 @@ export default function Home() {
           </DialogHeader>
           {job && (
             <>
+              {(s.cv_versions ?? []).length > 0 && (
+                <label className="version-pick">
+                  Write the application as
+                  <select value={job.cv_version ?? ""} disabled={!!busy} onChange={(e) => chooseVersion(job, e.target.value)}>
+                    <option value="">Best fit{versionName(job.cv_version_id) && !job.cv_version ? `: ${versionName(job.cv_version_id)}` : " (none fits)"}</option>
+                    {(s.cv_versions ?? []).map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <div className="detail-actions">
                 <button className="button primary" disabled={!!busy || job.expired} onClick={() => prepare(job)}>
                   <FileText size={17} />

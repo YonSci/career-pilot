@@ -14,7 +14,7 @@ from .schemas import Preferences, APPLICATION_STAGES
 from .sources import collect, clean_url, Context, failure_message
 from .relevance import screen, priority
 from .ai import match_job, write_package, ai_available, month_key, KeyRejected
-from . import catalog, collector, growth
+from . import catalog, collector, growth, cv_versions
 from .jev import JevCapReached, jev_enabled, jev_key, jev_state, held, score_job
 from .auth import plan_limits
 from .notifications import notify, notify_digest, availability as notify_ready
@@ -190,9 +190,11 @@ def _prepare_application(job_id):
             return
         approval = {**app_row.data, "status": "preparing"}
         try:
+            versions = cv_versions.versions(db)
+            version = next((v for v in versions if v["id"] == cv_versions.for_job(job.data, versions)), None)
             result = application_graph.invoke(
                 {
-                    "profile": read(db, "profile", {}),
+                    "profile": cv_versions.tailor(read(db, "profile", {}), version),
                     "job": job.data,
                     "match": job.data.get("match") or {},
                     "package": {},
@@ -217,6 +219,7 @@ def _prepare_application(job_id):
                     "completed": now(),
                     "profile_snapshot": read(db, "profile", {}),
                     "job_snapshot": job.data,
+                    "cv_version": version["name"] if version else None,
                 },
             )
         except Exception as e:
@@ -480,6 +483,8 @@ def _run_scan(run_id):
         }
         put(db, "run", run.key, result)
         prefs = {**Preferences().model_dump(), **read(db, "preferences", {})}
+        # Each CV version's target-role keywords find postings too.
+        prefs["keywords"] = cv_versions.search_keywords(prefs, cv_versions.versions(db))
         sources = rows(db, "source")
         pool = catalog.pool_on(db)
         shared = settings.catalog_enabled and settings.catalog_shared

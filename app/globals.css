@@ -517,6 +517,24 @@ h1 {
   gap: 4px;
   cursor: pointer;
 }
+.cv-suggestions { display: grid; gap: 8px; margin: 12px 0; }
+.cv-suggestion, .cv-version { border: 1px solid #dfe6ec; border-radius: 9px; padding: 10px 14px; }
+.cv-suggestion { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.cv-suggestion p { margin: 2px 0 0; }
+.cv-version { margin-top: 10px; }
+.cv-version-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.cv-version-name { display: grid; gap: 2px; text-align: left; background: none; border: none; padding: 0; cursor: pointer; font: inherit; color: inherit; min-width: 0; }
+.cv-version-body { display: grid; gap: 10px; margin-top: 12px; }
+.cv-version-body > label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
+.cv-version-body input:not([type="checkbox"]) { padding: 8px 10px; border: 1px solid #dfe6ec; border-radius: 7px; font: inherit; font-weight: 400; }
+.cv-version-body fieldset { border: none; padding: 0; margin: 0; display: grid; gap: 6px; max-height: 280px; overflow-y: auto; }
+.cv-version-body legend { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.cv-fact { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; line-height: 1.45; }
+.cv-fact input { width: auto; flex: none; margin: 3px 0 0; }
+.cv-fact span { flex: 1; text-align: left; font-weight: 400; }
+.cv-fact small { color: #6b7785; text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; margin-right: 4px; }
+.version-pick { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: #42505d; margin: 4px 0 10px; }
+.version-pick select { padding: 6px 8px; border: 1px solid #dfe6ec; border-radius: 7px; font: inherit; max-width: 100%; }
 .bench-job {
   border: 1px solid #dfe6ec;
   border-radius: 9px;
