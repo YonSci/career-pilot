@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from statistics import median
 from .db import SYSTEM, User, read
 from .config import settings
-from . import billing, growth, employers
+from . import billing, growth, employers, site_stats
 
 MONTHS = 6
 PAID_PLANS = ("pro", "pro_plus")
@@ -125,6 +125,7 @@ def report(db):
             "seats_asked": sum(e.get("seats") or 0 for e in enquiries),
             "new": sum(1 for e in enquiries if e.get("status") == "new"),
         },
+        "site": site_stats.summary(db),
         "ai_usage": [{"month": m, "server_key_calls": usage[m], "jev_tokens": jev_tokens[m]} for m in months],
         "caps": {"server_key_monthly_calls": settings.server_key_monthly_calls, "jev_monthly_tokens": settings.jev_monthly_tokens},
     }
@@ -160,6 +161,12 @@ def print_report(r):
         print(f"  median days from approval to payment: {e['median_days_approval_to_payment']}")
     ctr = f"{e['click_through']:.0%}" if e["click_through"] is not None else "n/a"
     print(f"  featured listings: {e['views']} page views, {e['apply_clicks']} Apply clicks (click-through {ctr}), {e['matches']} member matches")
+    s = r["site"]
+    ctr = f"{s['job_page_click_through']:.0%}" if s["job_page_click_through"] is not None else "n/a"
+    print(f"Public site, last {s['days']} days (people, not crawlers): {s['page_views']:,} page views, {s['search_arrivals']:,} from search engines")
+    print("  views by page: " + (", ".join(f"{k} {v}" for k, v in s["views"].items()) or "none yet"))
+    print("  search arrivals by page: " + (", ".join(f"{k} {v}" for k, v in s["search"].items()) or "none yet") + "; by engine: " + (", ".join(f"{k} {v}" for k, v in s["engines"].items()) or "none"))
+    print(f"  job pages: {sum(s['apply'].values())} Apply clicks, {sum(s['match'].values())} 'See how you match' clicks (click-through {ctr})")
     i = r["institutions"]
     print(f"Institutions: {i['enquiries']} enquiries ({i['new']} new) asking for {i['seats_asked']} seats")
     print(f"AI usage the revenue covers (caps: {r['caps']['server_key_monthly_calls']:,} server-key calls, {r['caps']['jev_monthly_tokens']:,} JEV tokens a month):")

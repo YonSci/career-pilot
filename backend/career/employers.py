@@ -15,7 +15,6 @@ member identity reaches the employer."""
 import hashlib
 import html
 import logging
-import re
 import secrets
 import threading
 from datetime import datetime, timezone, timedelta
@@ -23,12 +22,12 @@ from types import SimpleNamespace
 from .config import settings
 from .db import SYSTEM, Record, put, read, now, delete_row
 from . import growth, public_jobs as pj
+from .site_stats import is_bot  # noqa: F401 (used by main for listing statistics)
 
 log = logging.getLogger(__name__)
 COOKIE = "jfa_employer"
 LINK_HOURS = 72
 SESSION_DAYS = 30
-BOTS = re.compile(r"bot|crawl|spider|slurp|preview|facebookexternalhit|embedly|curl|wget|python|headless", re.I)
 _stats_lock = threading.Lock()
 
 
@@ -144,10 +143,6 @@ def payable(post):
     """Approved and not past its deadline: can be paid for (again)."""
     closed = post.get("deadline") and post["deadline"][:10] < datetime.now(timezone.utc).date().isoformat()
     return post.get("status") == "approved" and not closed
-
-
-def is_bot(user_agent):
-    return not user_agent or bool(BOTS.search(user_agent))
 
 
 def count(db, post_id, field):

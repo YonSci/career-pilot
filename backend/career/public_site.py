@@ -12,6 +12,9 @@ from . import public_jobs as pj
 from . import guide
 
 PER_PAGE = 24
+# A field-and-place page is listed in the sitemap only with at least this many jobs,
+# so search engines are not sent thin pages.
+COMBO_MIN = 3
 LOCATIONS = {"ethiopia": "Ethiopia", "africa": "Elsewhere in Africa", "remote": "Remote", "other": "Other countries"}
 CLOSING = {"7": "within 7 days", "14": "within 14 days", "30": "within 30 days"}
 
@@ -75,6 +78,71 @@ def shell(title, description, body, path, extra_head="", image=None):
     )
 
 
+def ld(data):
+    return '<script type="application/ld+json">' + json.dumps(data, ensure_ascii=False).replace("</", "<\\/") + "</script>"
+
+
+def breadcrumbs(*crumbs):
+    """Schema.org BreadcrumbList from (name, path) pairs."""
+    return ld({"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": i, "name": n, "item": site() + p} for i, (n, p) in enumerate(crumbs, 1)]})
+
+
+def places(jobs):
+    """{slug: (name, count)} of the places jobs are in, most jobs first."""
+    counts, names = {}, {}
+    for j in jobs:
+        if j.get("place_slug"):
+            counts[j["place_slug"]] = counts.get(j["place_slug"], 0) + 1
+            names[j["place_slug"]] = j["place"]
+    return {s: (names[s], n) for s, n in sorted(counts.items(), key=lambda x: (-x[1], names[x[0]]))}
+
+
+def place_chips(jobs, sector="", limit=16):
+    base = "/jobs/" + (sector + "/" if sector else "") + "in/"
+    items = list(places(jobs).items())[:limit]
+    if not items:
+        return ""
+    chips = "".join(f'<a class="chip" href="{base}{s}">{html.escape(name)} ({n})</a>' for s, (name, n) in items)
+    return f'<div class="chips" style="margin:0 0 18px"><span class="count" style="margin:0 6px 0 0">By place:</span>{chips}</div>'
+
+
+def field_label(sector):
+    return pj.SECTORS[sector][0].replace(" jobs", "")
+
+
+def place_page(data, place, sector=""):
+    """Jobs in one country (or Remote), optionally in one field: /jobs/in/<place>, /jobs/<field>/in/<place>."""
+    if sector and sector not in pj.SECTORS:
+        return None
+    jobs = [j for j in data["_all"] if j.get("place_slug") == place and (not sector or sector in j.get("sectors", []))]
+    named = places(data["_all"]).get(place)
+    if not named or not jobs:
+        return None
+    name = named[0]
+    where = "remote" if place == "remote" else "in " + name
+    if place == "remote":
+        title = f"Remote {field_label(sector).lower()} jobs" if sector else "Remote jobs in data, climate, geospatial, agriculture and development"
+    else:
+        title = f"{field_label(sector)} jobs in {name}" if sector else f"Jobs in {name}: data, climate, geospatial, agriculture and development"
+    path = "/jobs/" + (sector + "/" if sector else "") + "in/" + place
+    description = f"{len(jobs)} open {title[0].lower() + title[1:]}" if sector else f"{len(jobs)} open roles {where} in data, climate, geospatial, agriculture and development"
+    description += ", collected from ReliefWeb and employer boards and refreshed every ten minutes."
+    in_place = [j for j in data["_all"] if j.get("place_slug") == place]
+    fields = "".join(
+        f'<a class="chip" href="/jobs/{s}/in/{place}">{html.escape(field_label(s))} ({n})</a>'
+        for s in pj.SECTORS
+        if (n := sum(1 for j in in_place if s in j.get("sectors", [])))
+    )
+    crumbs = [("Jobs", "/jobs")] + ([(field_label(sector), "/jobs/" + sector)] if sector else []) + [(name, path)]
+    body = (
+        f'<p class="count" style="margin-top:28px">' + " · ".join(f'<a href="{p}">{html.escape(n)}</a>' for n, p in crumbs[:-1]) + "</p>"
+        f"<h1>{html.escape(title)}</h1><p class=\"lead\">{html.escape(description)}</p>"
+        + (f'<div class="chips" style="margin:0 0 18px"><a class="chip" href="/jobs/in/{place}">All fields</a>{fields}</div>' if fields else "")
+        + f'<div class="job-list">{pj.render_cards(jobs)}</div>'
+    )
+    return shell(title, description, body, path, extra_head=pj.json_ld(jobs[:25], site() + path) + breadcrumbs(*crumbs))
+
+
 # --- listing index with search, filters and pagination ---------------------------------
 
 
@@ -127,7 +195,8 @@ def jobs_index(data, params):
     if org in orgs:
         title = f"Open roles at {orgs[org]}"
     description = f"{len(jobs)} open posting{'s' if len(jobs) != 1 else ''}, collected from ReliefWeb and employer boards and refreshed every ten minutes. Filter by field, location, employer and closing date."
-    body = f"<h1>{html.escape(title)}</h1><p class=\"lead\">{html.escape(description)}</p>{form}<p class=\"count\">{len(jobs)} posting{'s' if len(jobs) != 1 else ''}{' · ' + str(data['listed_last_7_days']) + ' new this week' if not keep else ''}</p><div class=\"job-list\">{pj.render_cards(chunk)}</div>{pager}"
+    browse = place_chips(data["_all"] if not sector else [j for j in data["_all"] if sector in j.get("sectors", [])], sector if sector in pj.SECTORS else "") if not (q or location or org or closing) else ""
+    body = f"<h1>{html.escape(title)}</h1><p class=\"lead\">{html.escape(description)}</p>{form}{browse}<p class=\"count\">{len(jobs)} posting{'s' if len(jobs) != 1 else ''}{' · ' + str(data['listed_last_7_days']) + ' new this week' if not keep else ''}</p><div class=\"job-list\">{pj.render_cards(chunk)}</div>{pager}"
     return shell(title, description, body, "/jobs" + ("?" + urlencode(keep) if keep else ""), extra_head=pj.json_ld(chunk, site() + "/jobs"))
 
 
@@ -178,17 +247,27 @@ def job_page(data, slug):
     if similar:
         related += '<h2 class="sub">Similar roles</h2><div class="job-list">' + pj.render_cards(similar) + "</div>"
     featured_chip = '<span class="chip" style="background:var(--green);color:#fff">Featured</span>' if j.get("featured") else ""
+    more_in = ""
+    if j.get("place_slug"):
+        links = [f'<a href="/jobs/in/{j["place_slug"]}">All jobs {"remote" if j["place_slug"] == "remote" else "in " + html.escape(j["place"])}</a>']
+        links += [f'<a href="/jobs/{s}/in/{j["place_slug"]}">{html.escape(field_label(s))} {"remote" if j["place_slug"] == "remote" else "in " + html.escape(j["place"])}</a>' for s in j.get("sectors", [])]
+        more_in = '<div class="share">More like this: ' + "".join(links) + "</div>"
     body = (
         f'<div class="job-head"><div><div class="chips">{chips}{featured_chip}</div>'
         f'<h1>{html.escape(j["title"])}</h1><div class="org">{html.escape(j["company"])}{" · " if j["company"] and j["location"] else ""}{html.escape(j["location"])}</div></div></div>'
         f'<div class="facts">{facts_html}</div>'
-        f'<div class="actions"><a class="apply" href="{html.escape(j.get("apply_url") or j["url"])}" target="_blank" rel="noopener nofollow" data-track="job_apply_clicked">Apply on the employer\'s page ↗</a>'
-        f'<a class="ghost" href="/app/?job_url={quote(j["url"], safe="")}" data-track="job_match_clicked">See how you match</a></div>'
-        f'<div class="body">{source_note}{paragraphs}</div>{share_links(j)}{related}'
+        # Apply and match clicks go through the server so the site can measure them (site_stats.py).
+        f'<div class="actions"><a class="apply" href="{html.escape(j.get("apply_url") or "/out/" + slug)}" target="_blank" rel="noopener nofollow" data-track="job_apply_clicked">Apply on the employer\'s page ↗</a>'
+        f'<a class="ghost" href="/match/{slug}" rel="nofollow" data-track="job_match_clicked">See how you match</a></div>'
+        f'<div class="body">{source_note}{paragraphs}</div>{share_links(j)}{more_in}{related}'
     )
     description = (j.get("excerpt") or j["title"])[:155]
-    ld = pj.json_ld([j], site() + "/job/" + slug)
-    return shell(f'{j["title"]} at {j["company"]}' if j["company"] else j["title"], description, body, "/job/" + slug, extra_head=ld)
+    crumbs = [("Jobs", "/jobs")]
+    if j.get("place_slug"):
+        crumbs.append((j["place"], "/jobs/in/" + j["place_slug"]))
+    crumbs.append((j["title"], "/job/" + slug))
+    head = ld({"@context": "https://schema.org", **pj.job_posting(j)}) + breadcrumbs(*crumbs)
+    return shell(f'{j["title"]} at {j["company"]}' if j["company"] else j["title"], description, body, "/job/" + slug, extra_head=head)
 
 
 # --- organisations ----------------------------------------------------------------------
@@ -213,8 +292,13 @@ def org_page(data, slug):
         return None
     jobs = [j for j in data["_all"] if j.get("org_slug") == slug]
     description = f"{o['count']} open role{'s' if o['count'] != 1 else ''} at {o['name']}" + (", in " + ", ".join(o["locations"][:3]) if o["locations"] else "") + ". Each one scored against your verified CV when you join."
-    body = f"<h1>{html.escape(o['name'])}</h1><p class=\"lead\">{html.escape(description)}</p><div class=\"job-list\" style=\"margin-top:24px\">{pj.render_cards(jobs)}</div>"
-    return shell(f"Jobs at {o['name']}", description, body, "/organisations/" + slug, extra_head=pj.json_ld(jobs[:25], site() + "/organisations/" + slug))
+    body = (
+        f'<p class="count" style="margin-top:28px"><a href="/organisations">Employers</a></p>'
+        f"<h1>{html.escape(o['name'])}</h1><p class=\"lead\">{html.escape(description)}</p>{place_chips(jobs)}<div class=\"job-list\" style=\"margin-top:24px\">{pj.render_cards(jobs)}</div>"
+        f'<div class="cta"><div><b>Hiring at {html.escape(o["name"])}?</b> Feature a vacancy at the top of the listings, in the Telegram digest and in the searches of members it matches, and follow its views and Apply clicks.</div><a class="apply" href="/#employers">Feature a vacancy</a></div>'
+    )
+    head = pj.json_ld(jobs[:25], site() + "/organisations/" + slug) + breadcrumbs(("Employers", "/organisations"), (o["name"], "/organisations/" + slug))
+    return shell(f"Jobs at {o['name']}", description, body, "/organisations/" + slug, extra_head=head)
 
 
 # --- guide -----------------------------------------------------------------------------
@@ -245,6 +329,10 @@ def sitemap(data):
     urls += [(site() + "/jobs/" + s, "hourly", "0.8") for s in pj.SECTORS]
     urls += [(site() + "/job/" + j["slug"], "daily", "0.7") for j in data["_all"]]
     urls += [(site() + "/organisations/" + o["slug"], "daily", "0.5") for o in data["_orgs"]]
+    urls += [(site() + "/jobs/in/" + s, "daily", "0.7") for s in places(data["_all"])]
+    for sector in pj.SECTORS:
+        in_field = [j for j in data["_all"] if sector in j.get("sectors", [])]
+        urls += [(site() + f"/jobs/{sector}/in/{s}", "daily", "0.6") for s, (_, n) in places(in_field).items() if n >= COMBO_MIN]
     urls += [(site() + "/guide/" + a["slug"], "monthly", "0.5") for a in guide.ARTICLES]
     urls += [(site() + "/privacy.html", "monthly", "0.2"), (site() + "/terms.html", "monthly", "0.2")]
     body = "".join(f"<url><loc>{html.escape(u)}</loc><lastmod>{today}</lastmod><changefreq>{f}</changefreq><priority>{p}</priority></url>" for u, f, p in urls)

@@ -62,11 +62,11 @@ def test_job_page_with_sharing_related_roles_and_structured_data(client, monkeyp
     r = anon.get("/job/" + job["slug"])
     assert r.status_code == 200
     page = r.text
-    assert job["title"] in page and 'href="https://example.org/jobs/' in page and "Apply on the employer" in page
+    assert job["title"] in page and f'href="/out/{job['slug']}"' in page and "Apply on the employer" in page
     assert "t.me/share/url?" in page and "wa.me/?" in page and "linkedin.com/sharing" in page and "Copy link" in page
     assert '"@type": "JobPosting"' in page and '"employmentType": "FULL_TIME"' in page and '"jobLocationType": "TELECOMMUTE"' in page
     assert "Similar roles" in page and "Join on Telegram" in page and "t.me/jobs_find_ai_alerts" in page
-    assert "See how you match" in page and "/app/?job_url=https%3A%2F%2Fexample.org" in page
+    assert "See how you match" in page and f'href="/match/{job['slug']}"' in page
     assert anon.get("/job/does-not-exist-abc123").status_code == 404
     # Landing cards now link to job pages.
     assert f'href="/job/{job["slug"]}"' in anon.get("/jobs").text

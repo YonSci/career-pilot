@@ -15,6 +15,7 @@ from datetime import datetime, timezone, timedelta
 from .db import Record
 from .service import expired
 from .config import settings
+from . import geo
 
 SECTORS = {
     "data-science": ("Data science, analytics and AI jobs", ["data", "analytics", "analyst", "machine learning", "ai", "statistic", "python", "engineer", "developer", "digital"]),
@@ -131,10 +132,25 @@ def plain_text(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def place_of(location):
+    """(slug, name) of the place a location names for the public pages: Remote,
+    or its country; None when neither is recognised."""
+    if geo.is_remote(location):
+        return "remote", "Remote"
+    found = geo.place(location)
+    return (slugify(found["country"]), found["country"]) if found else None
+
+
 def _public(job, posted, featured=False):
     description = plain_text(job.get("description"))
     salary, contract, work = extract_details(job.get("title"), job.get("description"), job.get("location"))
+    where = place_of(job.get("location"))
+    country = geo.place(job.get("location"))
     return {
+        "place_slug": where[0] if where else None,
+        "place": where[1] if where else None,
+        "country_code": country["code"] if country else None,
+        "country": country["country"] if country else None,
         "featured": featured,
         "slug": job_slug(job.get("title") or "", job.get("url") or ""),
         "org_slug": slugify(job.get("company") or "unknown"),
@@ -287,29 +303,35 @@ def render_cards(jobs):
     return "".join(out)
 
 
+def job_posting(j):
+    """Schema.org JobPosting for one public job."""
+    posting = {
+        "@type": "JobPosting",
+        "title": j["title"],
+        "description": j.get("body") or j["excerpt"] or j["title"],
+        "datePosted": j["posted"] or datetime.now(timezone.utc).date().isoformat(),
+        "hiringOrganization": {"@type": "Organization", "name": j["company"] or "See posting"},
+        "jobLocation": {"@type": "Place", "address": {"@type": "PostalAddress", "addressLocality": j["location"], **({"addressCountry": j["country_code"]} if j.get("country_code") else {})}},
+        "url": j["url"],
+        "directApply": False,
+    }
+    if j.get("deadline"):
+        posting["validThrough"] = j["deadline"][:10]
+    if j.get("slug"):
+        posting["url"] = settings.public_url.rstrip("/") + "/job/" + j["slug"]
+        posting["applicationContact"] = {"@type": "ContactPoint", "url": j["url"]}
+    if j.get("work_type") == "Remote" or j.get("place_slug") == "remote":
+        posting["jobLocationType"] = "TELECOMMUTE"
+        if j.get("country_code"):
+            posting["applicantLocationRequirements"] = {"@type": "Country", "name": j["country"]}
+    if j.get("contract"):
+        posting["employmentType"] = {"Full-time": "FULL_TIME", "Part-time": "PART_TIME", "Internship": "INTERN", "Volunteer": "VOLUNTEER", "Consultancy": "CONTRACTOR", "Fixed-term": "TEMPORARY", "Fellowship": "OTHER"}.get(j["contract"], "OTHER")
+    return posting
+
+
 def json_ld(jobs, site):
     """Schema.org ItemList of JobPosting entries for search engines."""
-    items = []
-    for i, j in enumerate(jobs, 1):
-        posting = {
-            "@type": "JobPosting",
-            "title": j["title"],
-            "description": j["excerpt"] or j["title"],
-            "datePosted": j["posted"] or datetime.now(timezone.utc).date().isoformat(),
-            "hiringOrganization": {"@type": "Organization", "name": j["company"] or "See posting"},
-            "jobLocation": {"@type": "Place", "address": {"@type": "PostalAddress", "addressLocality": j["location"]}},
-            "url": j["url"],
-        }
-        if j.get("deadline"):
-            posting["validThrough"] = j["deadline"][:10]
-        if j.get("slug"):
-            posting["url"] = settings.public_url.rstrip("/") + "/job/" + j["slug"]
-            posting["applicationContact"] = {"@type": "ContactPoint", "url": j["url"]}
-        if j.get("work_type") == "Remote":
-            posting["jobLocationType"] = "TELECOMMUTE"
-        if j.get("contract"):
-            posting["employmentType"] = {"Full-time": "FULL_TIME", "Part-time": "PART_TIME", "Internship": "INTERN", "Volunteer": "VOLUNTEER", "Consultancy": "CONTRACTOR", "Fixed-term": "TEMPORARY", "Fellowship": "OTHER"}.get(j["contract"], "OTHER")
-        items.append({"@type": "ListItem", "position": i, "item": posting})
+    items = [{"@type": "ListItem", "position": i, "item": job_posting(j)} for i, j in enumerate(jobs, 1)]
     data = {"@context": "https://schema.org", "@type": "ItemList", "name": "Latest jobs on Jobs Find AI", "url": site, "itemListElement": items}
     return '<script type="application/ld+json">' + json.dumps(data, ensure_ascii=False).replace("</", "<\\/") + "</script>"
 

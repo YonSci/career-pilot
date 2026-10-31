@@ -146,6 +146,7 @@ Tests use a temporary SQLite database and mocked providers. No network calls, mo
 - `backend/career/cv_versions.py`: target roles over the verified evidence (search keywords, best fit per job, focus for drafting)
 - `backend/career/posting_facts.py`, `geo.py`: posting details for filters, country lookup for the map
 - `backend/career/billing.py`, `public_jobs.py`, `public_site.py`, `employers.py`: payments, the public job directory, employer listings and their self-service page
+- `backend/career/site_stats.py`: public-site page views, search-engine arrivals and Apply clicks, without cookies
 - `backend/career/ai.py`: extraction, matching, drafting with independent review and revision
 - `backend/career/notifications.py`: in-app inbox, Telegram, email, WhatsApp, digests, test alerts
 - `backend/career/telegram.py`: long polling, chat linking, button handling

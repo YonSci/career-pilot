@@ -46,7 +46,7 @@ def test_public_listings_show_public_facts_only(client):
     body = anon.get("/api/public/jobs").text
     for private in ("score", "summary", "match", "user_id", "status", "private", "Example Applicant"):
         assert private not in body
-    assert set(d["latest"][0]) == {"title", "company", "location", "source", "posted", "deadline", "url", "excerpt", "featured", "sectors", "slug", "org_slug", "location_class", "salary", "contract", "work_type"}
+    assert set(d["latest"][0]) == {"title", "company", "location", "source", "posted", "deadline", "url", "excerpt", "featured", "sectors", "slug", "org_slug", "location_class", "salary", "contract", "work_type", "place_slug", "place", "country_code", "country"}
     assert "_all" not in d
     assert member.get("/api/state").json()["jobs"]  # member data untouched
 
@@ -83,6 +83,10 @@ def test_search_console_tag_is_injected_when_configured(client, monkeypatch):
     m._landing_cache.update(at=0.0, html=None)
     page = TestClient(app).get("/").text
     assert '<meta name="google-site-verification" content="abc&quot;123" />' in page and page.index("google-site-verification") < page.index("<body")
+    assert "msvalidate.01" not in page
+    monkeypatch.setattr(settings, "bing_site_verification", "B1NG")
+    m._landing_cache.update(at=0.0, html=None)
+    assert '<meta name="msvalidate.01" content="B1NG" />' in TestClient(app).get("/").text
 
 
 def test_channel_link_appears_when_a_public_channel_is_configured(client, monkeypatch):

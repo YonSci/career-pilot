@@ -353,6 +353,7 @@ type Business = {
   employers: { submitted: number; approved: number; paid: number; median_days_approval_to_payment: number | null; views: number; apply_clicks: number; matches: number; click_through: number | null };
   institutions: { enquiries: number; seats_asked: number; new: number };
   ai_usage: { month: string; server_key_calls: number; jev_tokens: number }[];
+  site?: { days: number; page_views: number; search_arrivals: number; views: Record<string, number>; search: Record<string, number>; engines: Record<string, number>; apply: Record<string, number>; match: Record<string, number>; job_page_click_through: number | null };
 };
 const money = (m: { ETB: number; USD: number }) => [m.ETB ? `${m.ETB.toLocaleString()} ETB` : "", m.USD ? `$${m.USD.toLocaleString()}` : ""].filter(Boolean).join(" + ") || "0";
 const defaults: Prefs = {
@@ -2769,6 +2770,16 @@ export default function Home() {
                         {biz.employers.click_through !== null ? ` (${Math.round(biz.employers.click_through * 100)}%)` : ""}, {biz.employers.matches} member matches
                         <br />
                         Institutions: {biz.institutions.enquiries} enquiries ({biz.institutions.new} new) for {biz.institutions.seats_asked} seats
+                        {biz.site && (
+                          <>
+                            <br />
+                            Public site, last {biz.site.days} days: {biz.site.page_views.toLocaleString()} page views, {biz.site.search_arrivals.toLocaleString()} from search engines
+                            {Object.keys(biz.site.engines).length ? ` (${Object.entries(biz.site.engines).map(([k, v]) => `${k} ${v}`).join(", ")})` : ""} · job pages{" "}
+                            {(biz.site.views.job ?? 0).toLocaleString()} views, {Object.values(biz.site.apply).reduce((a, b) => a + b, 0)} Apply clicks,{" "}
+                            {Object.values(biz.site.match).reduce((a, b) => a + b, 0)} &ldquo;See how you match&rdquo; clicks
+                            {biz.site.job_page_click_through !== null ? ` (${Math.round(biz.site.job_page_click_through * 100)}% click-through)` : ""}
+                          </>
+                        )}
                       </p>
                     </section>
                   )}

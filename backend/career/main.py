@@ -64,6 +64,7 @@ from . import public_site
 from . import employers
 from . import business
 from . import cv_versions
+from . import site_stats
 from .ai import server_key_usage
 
 
@@ -372,16 +373,34 @@ def institution_enquiry(body: Enquiry, request: Request, db=Depends(db_session))
     return {"status": "received"}
 
 
+def public_page(page, kind, request, db):
+    """Serve a public page and count the view (site_stats.py); None is a 404."""
+    if page is None:
+        raise HTTPException(404, "Not found")
+    site_stats.record(db, kind, request)
+    return HTMLResponse(page)
+
+
 @app.get("/jobs", include_in_schema=False)
 def jobs_index_page(request: Request, db=Depends(db_session)):
-    return HTMLResponse(public_site.jobs_index(public_jobs.listings(db), dict(request.query_params)))
+    return public_page(public_site.jobs_index(public_jobs.listings(db), dict(request.query_params)), "jobs", request, db)
+
+
+@app.get("/jobs/in/{place}", include_in_schema=False)
+def place_jobs_page(place: str, request: Request, db=Depends(db_session)):
+    return public_page(public_site.place_page(public_jobs.listings(db), place), "place", request, db)
+
+
+@app.get("/jobs/{sector}/in/{place}", include_in_schema=False)
+def sector_place_jobs_page(sector: str, place: str, request: Request, db=Depends(db_session)):
+    return public_page(public_site.place_page(public_jobs.listings(db), place, sector), "place", request, db)
 
 
 @app.get("/jobs/{sector}", include_in_schema=False)
 def sector_jobs_page(sector: str, request: Request, db=Depends(db_session)):
     if sector not in public_jobs.SECTORS:
         raise HTTPException(404, "Not found")
-    return HTMLResponse(public_site.jobs_index(public_jobs.listings(db), {**dict(request.query_params), "sector": sector}))
+    return public_page(public_site.jobs_index(public_jobs.listings(db), {**dict(request.query_params), "sector": sector}), "sector", request, db)
 
 
 @app.get("/job/{slug}", include_in_schema=False)
@@ -393,33 +412,50 @@ def job_detail_page(slug: str, request: Request, db=Depends(db_session)):
     post_id = data["_by_slug"][slug].get("post_id")
     if post_id and not employers.is_bot(request.headers.get("user-agent")):
         employers.count(db, post_id, "views")
-    return HTMLResponse(page)
+    return public_page(page, "job", request, db)
+
+
+@app.get("/out/{slug}", include_in_schema=False)
+def job_apply_out(slug: str, request: Request, db=Depends(db_session)):
+    """Apply link of a public job page: counts the click, then opens the employer's page.
+    Only postings in the public listings resolve, so this is not an open redirect."""
+    job = public_jobs.listings(db)["_by_slug"].get(slug)
+    if not job:
+        return RedirectResponse("/jobs", status_code=302)
+    site_stats.record(db, "job", request, "apply")
+    return RedirectResponse(job["url"], status_code=302)
+
+
+@app.get("/match/{slug}", include_in_schema=False)
+def job_match_out(slug: str, request: Request, db=Depends(db_session)):
+    """"See how you match" on a public job page: counts the click, then opens the dashboard with the posting."""
+    from urllib.parse import quote
+
+    job = public_jobs.listings(db)["_by_slug"].get(slug)
+    if not job:
+        return RedirectResponse("/app/", status_code=302)
+    site_stats.record(db, "job", request, "match")
+    return RedirectResponse("/app/?job_url=" + quote(job["url"], safe=""), status_code=302)
 
 
 @app.get("/organisations", include_in_schema=False)
-def organisations_page(db=Depends(db_session)):
-    return HTMLResponse(public_site.org_index(public_jobs.listings(db)))
+def organisations_page(request: Request, db=Depends(db_session)):
+    return public_page(public_site.org_index(public_jobs.listings(db)), "organisations", request, db)
 
 
 @app.get("/organisations/{slug}", include_in_schema=False)
-def organisation_page(slug: str, db=Depends(db_session)):
-    page = public_site.org_page(public_jobs.listings(db), slug)
-    if page is None:
-        raise HTTPException(404, "Not found")
-    return HTMLResponse(page)
+def organisation_page(slug: str, request: Request, db=Depends(db_session)):
+    return public_page(public_site.org_page(public_jobs.listings(db), slug), "organisation", request, db)
 
 
 @app.get("/guide", include_in_schema=False)
-def guide_index_page():
-    return HTMLResponse(public_site.guide_index())
+def guide_index_page(request: Request, db=Depends(db_session)):
+    return public_page(public_site.guide_index(), "guide", request, db)
 
 
 @app.get("/guide/{slug}", include_in_schema=False)
-def guide_article_page(slug: str):
-    page = public_site.guide_page(slug)
-    if page is None:
-        raise HTTPException(404, "Not found")
-    return HTMLResponse(page)
+def guide_article_page(slug: str, request: Request, db=Depends(db_session)):
+    return public_page(public_site.guide_page(slug), "guide", request, db)
 
 
 @app.get("/sitemap.xml", include_in_schema=False)
@@ -711,10 +747,12 @@ _landing_cache = {"at": 0.0, "html": None}
 
 
 @app.get("/", include_in_schema=False)
-def landing_page(db=Depends(db_session)):
+def landing_page(request: Request, db=Depends(db_session)):
     """The landing page with the latest public postings rendered in (search engines
     see them without JavaScript), plus JobPosting structured data."""
     import time as _time
+
+    site_stats.record(db, "landing", request)
 
     index = settings.landing_dir / "index.html"
     if not index.is_file():
@@ -723,11 +761,13 @@ def landing_page(db=Depends(db_session)):
         return HTMLResponse(_landing_cache["html"])
     data = public_jobs.listings(db)
     page = index.read_text(encoding="utf-8")
-    if settings.google_site_verification:
-        import html as _h
+    import html as _h
 
-        tag = '<meta name="google-site-verification" content="' + _h.escape(settings.google_site_verification.strip(), quote=True) + '" />'
-        page = page.replace('<meta charset="utf-8" />', '<meta charset="utf-8" />' + chr(10) + tag, 1)
+    # Search Console and Bing Webmaster Tools ownership checks, from the environment.
+    for name, value in (("google-site-verification", settings.google_site_verification), ("msvalidate.01", settings.bing_site_verification)):
+        if value.strip():
+            tag = f'<meta name="{name}" content="' + _h.escape(value.strip(), quote=True) + '" />'
+            page = page.replace('<meta charset="utf-8" />', '<meta charset="utf-8" />' + chr(10) + tag, 1)
     channel_id = settings.telegram_channel_id.strip()
     if channel_id.startswith("@"):
         import html as _hc
