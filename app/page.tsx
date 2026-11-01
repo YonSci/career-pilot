@@ -291,7 +291,7 @@ const POST_STATES: Record<EmployerPostRow["state"], string> = {
 };
 type Testimonial = { id: string; name: string; role: string; organisation: string; quote: string };
 type EnquiryRow = { id: string; organisation: string; contact_name: string; contact_email: string; seats: number; note: string; status: string; created: string };
-type PaymentRow = { ref: string; email: string; product: string; amount: number; currency: string; provider: string; status: string; created: string; paid_at?: string };
+type PaymentRow = { ref: string; email: string; product: string; amount: number; currency: string; provider: string; status: string; created: string; paid_at?: string; held_reason?: string };
 type State = {
   user: Account;
   plan: Plan;
@@ -350,10 +350,33 @@ type Business = {
   checkouts: Record<string, { started: number; paid: number }>;
   awaiting_confirmation: { count: number; ETB: number; USD: number };
   members: { accounts: number; paying_now: number; ever_paid: number; new_payers_this_month: number; repeat_payers: number; unused_credits: number };
-  employers: { submitted: number; approved: number; paid: number; median_days_approval_to_payment: number | null; views: number; apply_clicks: number; matches: number; click_through: number | null };
+  refunds?: { count: number; ETB: number; USD: number };
+  held?: { ref: string; provider: string; reason: string }[];
+  employers: {
+    submitted: number;
+    approved: number;
+    paid: number;
+    featured_free?: number;
+    median_days_approval_to_payment: number | null;
+    views: number;
+    apply_clicks: number;
+    keyword_reach: number;
+    apply_per_100_views: number | null;
+  };
   institutions: { enquiries: number; seats_asked: number; new: number };
   ai_usage: { month: string; server_key_calls: number; jev_tokens: number }[];
-  site?: { days: number; page_views: number; search_arrivals: number; views: Record<string, number>; search: Record<string, number>; engines: Record<string, number>; apply: Record<string, number>; match: Record<string, number>; job_page_click_through: number | null };
+  site?: {
+    days: number;
+    page_views: number;
+    search_arrivals: number;
+    views: Record<string, number>;
+    search: Record<string, number>;
+    engines: Record<string, number>;
+    apply: Record<string, number>;
+    match: Record<string, number>;
+    apply_per_100_job_views: number | null;
+    match_per_100_job_views: number | null;
+  };
 };
 const money = (m: { ETB: number; USD: number }) => [m.ETB ? `${m.ETB.toLocaleString()} ETB` : "", m.USD ? `$${m.USD.toLocaleString()}` : ""].filter(Boolean).join(" + ") || "0";
 const defaults: Prefs = {
@@ -2760,14 +2783,18 @@ export default function Home() {
                           ? Object.entries(biz.checkouts).map(([k, v]) => `${k} ${v.paid} of ${v.started}`).join(" · ")
                           : "none yet"}
                         {biz.awaiting_confirmation.count ? ` · ${biz.awaiting_confirmation.count} manual requests awaiting confirmation (${money(biz.awaiting_confirmation)})` : ""}
+                        {biz.refunds?.count ? ` · ${biz.refunds.count} refunded, not in revenue (${money(biz.refunds)})` : ""}
+                        {biz.held?.length ? ` · ${biz.held.length} held for review` : ""}
                         <br />
                         Members: {biz.members.paying_now} of {biz.members.accounts} on a paid plan now · {biz.members.ever_paid} ever paid · {biz.members.new_payers_this_month} new payers this
                         month · {biz.members.repeat_payers} bought a plan again · {biz.members.unused_credits} unused package credits
                         <br />
                         Employers: {biz.employers.submitted} submitted → {biz.employers.approved} approved → {biz.employers.paid} paid
+                        {biz.employers.featured_free ? ` · ${biz.employers.featured_free} featured free` : ""}
                         {biz.employers.median_days_approval_to_payment !== null ? ` · median ${biz.employers.median_days_approval_to_payment} days from approval to payment` : ""} ·{" "}
                         {biz.employers.views} views, {biz.employers.apply_clicks} Apply clicks
-                        {biz.employers.click_through !== null ? ` (${Math.round(biz.employers.click_through * 100)}%)` : ""}, {biz.employers.matches} member matches
+                        {biz.employers.apply_per_100_views !== null ? ` (${biz.employers.apply_per_100_views} per 100 views)` : ""}, {biz.employers.keyword_reach} members
+                        reached by matching keywords
                         <br />
                         Institutions: {biz.institutions.enquiries} enquiries ({biz.institutions.new} new) for {biz.institutions.seats_asked} seats
                         {biz.site && (
@@ -2777,18 +2804,20 @@ export default function Home() {
                             {Object.keys(biz.site.engines).length ? ` (${Object.entries(biz.site.engines).map(([k, v]) => `${k} ${v}`).join(", ")})` : ""} · job pages{" "}
                             {(biz.site.views.job ?? 0).toLocaleString()} views, {Object.values(biz.site.apply).reduce((a, b) => a + b, 0)} Apply clicks,{" "}
                             {Object.values(biz.site.match).reduce((a, b) => a + b, 0)} &ldquo;See how you match&rdquo; clicks
-                            {biz.site.job_page_click_through !== null ? ` (${Math.round(biz.site.job_page_click_through * 100)}% click-through)` : ""}
+                            {biz.site.apply_per_100_job_views !== null
+                              ? ` (per 100 job-page views: ${biz.site.apply_per_100_job_views} Apply, ${biz.site.match_per_100_job_views} Match; clicks, not unique visitors)`
+                              : ""}
                           </>
                         )}
                       </p>
                     </section>
                   )}
-                  {(overview.payments ?? []).some((p) => p.status !== "paid") && (
+                  {(overview.payments ?? []).some((p) => p.status !== "paid" && p.status !== "refunded") && (
                     <section className="panel">
                       <h2>Payments awaiting confirmation</h2>
                       <p className="field-help">Manual payments (Telebirr, bank transfer). Mark one as paid once the money has arrived; the purchase activates immediately.</p>
                       {(overview.payments ?? [])
-                        .filter((p) => p.status !== "paid")
+                        .filter((p) => p.status !== "paid" && p.status !== "refunded")
                         .map((p) => (
                           <div className="source-row" key={p.ref}>
                             <CreditCard size={18} />
@@ -2798,6 +2827,7 @@ export default function Home() {
                               </strong>
                               <p>
                                 {p.provider} · reference {p.ref} · {new Date(p.created).toLocaleDateString()}
+                                {p.status === "held" ? ` · held: ${p.held_reason}. Check the order with ${p.provider} before marking it paid.` : ""}
                               </p>
                             </div>
                             <button
@@ -2822,7 +2852,7 @@ export default function Home() {
                       <p className="field-help">
                         Approve a vacancy and the employer is emailed a sign-in link to pay {overview.pricing?.featured_listing.etb.toLocaleString()} ETB or $
                         {overview.pricing?.featured_listing.usd}; it goes live for {overview.pricing?.featured_listing.days} days when the payment clears. Employers follow views, apply clicks
-                        and matching members at <a href="/employers">/employers</a>. Use Feature now for a payment received by hand.
+                        and members reached by matching keywords at <a href="/employers">/employers</a>. Paid by hand records the listed price as revenue; Feature free does not.
                       </p>
                       {(overview.employer_posts ?? []).map((p) => {
                         const moderate = (status: string, done?: string) =>
@@ -2849,7 +2879,7 @@ export default function Home() {
                                   {POST_STATES[p.state] ?? p.status}
                                   {p.state === "live" && p.featured_until ? " until " + new Date(p.featured_until).toLocaleDateString() : ""}
                                 </span>{" "}
-                                {p.stats.views} views · {p.stats.apply_clicks} apply clicks · {p.stats.matches} members matched
+                                {p.stats.views} views · {p.stats.apply_clicks} apply clicks · {p.stats.matches} members reached by matching keywords
                               </p>
                             </div>
                             <div className="button-row">
@@ -2858,20 +2888,22 @@ export default function Home() {
                                   Approve
                                 </button>
                               )}
-                              {(p.state === "awaiting_payment" || p.state === "ended" || p.state === "live") && (
-                                <button
-                                  className="text-button"
-                                  disabled={busy === "post-" + p.id}
-                                  onClick={() =>
-                                    act("post-" + p.id, async () => {
-                                      await call(`/admin/employer-posts/${p.id}/activate`, "POST");
-                                      setOverview(await call<Overview>("/admin/overview"));
-                                    }, "Featured for 14 more days")
-                                  }
-                                >
-                                  {p.state === "live" ? "Extend" : "Feature now"}
-                                </button>
-                              )}
+                              {(p.state === "awaiting_payment" || p.state === "ended" || p.state === "live") &&
+                                (["ETB", "USD", "free"] as const).map((payment) => (
+                                  <button
+                                    key={payment}
+                                    className="text-button"
+                                    disabled={busy === "post-" + p.id}
+                                    onClick={() =>
+                                      act("post-" + p.id, async () => {
+                                        await call(`/admin/employer-posts/${p.id}/activate`, "POST", { payment });
+                                        setOverview(await call<Overview>("/admin/overview"));
+                                      }, payment === "free" ? "Featured free for 14 days" : `Recorded ${payment} payment; featured for 14 days`)
+                                    }
+                                  >
+                                    {payment === "free" ? (p.state === "live" ? "Extend free" : "Feature free") : `Paid by hand (${payment})`}
+                                  </button>
+                                ))}
                               {p.state !== "review" && p.state !== "rejected" && (
                                 <button
                                   className="text-button"

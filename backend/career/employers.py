@@ -185,6 +185,21 @@ def checkout(db, post, currency):
     return billing.start_checkout(db, payer, "featured_listing", currency, extra={"post_id": post["id"]})
 
 
+def record_hand_payment(db, post_id, currency):
+    """The owner received the listing price by hand: record it as a paid manual order."""
+    from . import billing
+
+    post = read(db, "employer_post:" + post_id, user_id=SYSTEM)
+    if not post:
+        raise ValueError("Unknown posting.")
+    if post.get("status") != "approved":
+        raise ValueError("Only approved postings can be featured.")
+    payer = SimpleNamespace(id=None, email=post["contact_email"], name=post.get("contact_name") or post.get("company"))
+    payment = billing.new_payment(db, payer, "featured_listing", currency, "manual", {"post_id": post_id, "status": "requested"})
+    billing.apply_purchase(db, payment["ref"], provider_ref="manual")
+    return read(db, "employer_post:" + post_id, user_id=SYSTEM)
+
+
 # --- pages ---------------------------------------------------------------------------------
 
 CSS = """
@@ -259,7 +274,7 @@ def _listing(db, post):
         f' · {"closes " + html.escape(post["deadline"][:10]) if post.get("deadline") else "no closing date"}{link}</div>'
         f'<div class="stats"><div class="stat"><b>{st["views"]:,}</b><small>page views ({st["views_7d"]:,} in the last 7 days)</small></div>'
         f'<div class="stat"><b>{st["apply_clicks"]:,}</b><small>clicks on Apply ({st["apply_clicks_7d"]:,} in the last 7 days)</small></div>'
-        f'<div class="stat"><b>{st["matches"]:,}</b><small>members whose search matched it</small></div></div>'
+        f'<div class="stat"><b>{st["matches"]:,}</b><small>members reached by matching keywords</small></div></div>'
         f"{actions}</div>"
     )
 

@@ -106,17 +106,80 @@ def test_chapa_checkout_verify_and_webhook(client, monkeypatch):
     assert r.headers["location"].endswith("/app/?payment=paid")
 
 
+def lemon_event(ref, event="order_created", **attributes):
+    payload = json.dumps({"meta": {"event_name": event, "custom_data": {"ref": ref}}, "data": {"id": "123", "attributes": {"status": "paid", **attributes}}}).encode()
+    sig = hmac.new(b"lemon-secret", payload, hashlib.sha256).hexdigest()
+    return TestClient(app).post("/api/billing/webhook/lemonsqueezy", content=payload, headers={"x-signature": sig})
+
+
+def cents(usd):
+    return int(round(usd * 100))
+
+
 def test_lemon_checkout_link_and_webhook(client, monkeypatch):
-    monkeypatch.setattr(settings, "lemon_checkout_package", "https://store.lemonsqueezy.com/checkout/buy/abc")
+    monkeypatch.setattr(settings, "lemon_checkout_package_5", "https://store.lemonsqueezy.com/checkout/buy/five")
     monkeypatch.setattr(settings, "lemon_webhook_secret", "lemon-secret")
     member = signup_member(client)
     out = member.post("/api/billing/checkout", json={"product": "package_5", "currency": "USD"}).json()
-    assert out["mode"] == "redirect" and out["provider"] == "lemonsqueezy" and "checkout%5Bcustom%5D%5Bref%5D=" + out["ref"] in out["url"]
+    assert out["mode"] == "redirect" and out["provider"] == "lemonsqueezy" and out["url"].startswith("https://store.lemonsqueezy.com/checkout/buy/five?")
+    assert "checkout%5Bcustom%5D%5Bref%5D=" + out["ref"] in out["url"]
     payload = json.dumps({"meta": {"event_name": "order_created", "custom_data": {"ref": out["ref"]}}, "data": {"id": "123", "attributes": {"status": "paid"}}}).encode()
-    sig = hmac.new(b"lemon-secret", payload, hashlib.sha256).hexdigest()
     assert TestClient(app).post("/api/billing/webhook/lemonsqueezy", content=payload, headers={"x-signature": "bad"}).status_code == 401
-    assert TestClient(app).post("/api/billing/webhook/lemonsqueezy", content=payload, headers={"x-signature": sig}).status_code == 200
+    assert lemon_event(out["ref"], currency="USD", total=cents(settings.price_package_usd * 4)).status_code == 200
     assert member.get("/api/state").json()["plan"]["credits"] == 5
+
+
+def test_lemon_order_that_does_not_pay_for_the_checkout_is_held(client, monkeypatch):
+    sent = []
+    monkeypatch.setattr("career.notifications.email_send", lambda subject, text, to=None: sent.append(subject))
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.org")
+    monkeypatch.setattr(settings, "email_from", "owner@example.org")
+    monkeypatch.setattr(settings, "lemon_checkout_package", "https://store.lemonsqueezy.com/checkout/buy/one")
+    monkeypatch.setattr(settings, "lemon_checkout_pro", "https://store.lemonsqueezy.com/checkout/buy/pro")
+    monkeypatch.setattr(settings, "lemon_webhook_secret", "lemon-secret")
+    member = signup_member(client)
+    # Five packages have no Lemon link of their own: they become a manual request, not the one-package link.
+    assert member.post("/api/billing/checkout", json={"product": "package_5", "currency": "USD"}).json()["mode"] == "manual"
+
+    pro = member.post("/api/billing/checkout", json={"product": "pro", "currency": "USD"}).json()["ref"]
+    # The Pro reference arrives on a cheaper order (the one-package product): held, nothing granted.
+    r = lemon_event(pro, currency="USD", total=cents(settings.price_package_usd)).json()
+    assert r == {"ok": True}
+    payments = {p["ref"]: p for p in client.get("/api/admin/overview").json()["payments"]}
+    assert payments[pro]["status"] == "held" and "expected" in payments[pro]["held_reason"]
+    assert member.get("/api/state").json()["user"]["plan"] != "pro" and any("held for review" in s for s in sent)
+    # Wrong currency is held too; a manual or Chapa reference is never applied by Lemon.
+    other = member.post("/api/billing/checkout", json={"product": "pro", "currency": "USD"}).json()["ref"]
+    lemon_event(other, currency="EUR", total=cents(settings.price_pro_usd * 2))
+    manual = member.post("/api/billing/checkout", json={"product": "pro", "currency": "ETB"}).json()["ref"]
+    lemon_event(manual, currency="USD", total=cents(settings.price_pro_usd))
+    payments = {p["ref"]: p for p in client.get("/api/admin/overview").json()["payments"]}
+    assert payments[other]["status"] == "held" and "EUR" in payments[other]["held_reason"]
+    assert payments[manual]["status"] == "held" and "manual" in payments[manual]["held_reason"]
+    business = client.get("/api/admin/business").json()
+    assert business["all_time"]["count"] == 0 and len(business["held"]) == 3
+    # The owner can still accept a held payment after checking the order.
+    client.post(f"/api/admin/payments/{pro}/paid")
+    assert member.get("/api/state").json()["user"]["plan"] == "pro"
+
+
+def test_lemon_refunds_and_test_orders_are_not_revenue(client, monkeypatch):
+    monkeypatch.setattr(settings, "lemon_checkout_package", "https://store.lemonsqueezy.com/checkout/buy/one")
+    monkeypatch.setattr(settings, "lemon_webhook_secret", "lemon-secret")
+    member = signup_member(client)
+    paid = member.post("/api/billing/checkout", json={"product": "package", "currency": "USD"}).json()["ref"]
+    trial = member.post("/api/billing/checkout", json={"product": "package", "currency": "USD"}).json()["ref"]
+    lemon_event(paid, currency="USD", total=cents(settings.price_package_usd))
+    lemon_event(trial, currency="USD", total=cents(settings.price_package_usd), test_mode=True)
+    assert member.get("/api/state").json()["plan"]["credits"] == 2
+    assert client.get("/api/admin/business").json()["all_time"] == {"ETB": 0, "USD": settings.price_package_usd, "count": 1}
+
+    lemon_event(paid, event="order_refunded", status="refunded", currency="USD", refunded_amount=cents(settings.price_package_usd))
+    business = client.get("/api/admin/business").json()
+    assert business["all_time"]["count"] == 0 and business["refunds"] == {"count": 1, "ETB": 0, "USD": settings.price_package_usd}
+    # A repeated order event does not re-apply a refunded payment.
+    lemon_event(paid, currency="USD", total=cents(settings.price_package_usd))
+    assert member.get("/api/state").json()["plan"]["credits"] == 2
 
 
 def test_credits_extend_the_package_cap_and_plans_expire(client, monkeypatch):

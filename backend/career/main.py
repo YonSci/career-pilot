@@ -561,11 +561,19 @@ def admin_moderate_post(id: str, body: Moderation, _: User = Depends(admin), db=
     return post
 
 
+class Activation(BaseModel):
+    # "free": complimentary, no revenue. ETB or USD: a payment received by hand at the listed price.
+    payment: Literal["free", "ETB", "USD"] = "free"
+
+
 @app.post("/api/admin/employer-posts/{id}/activate")
-def admin_feature_post(id: str, _: User = Depends(admin), db=Depends(db_session)):
-    """Feature an approved listing without an online payment (paid by hand, or free)."""
+def admin_feature_post(id: str, body: Activation = Activation(), _: User = Depends(admin), db=Depends(db_session)):
+    """Feature an approved listing without an online payment: free, or paid by hand."""
     try:
-        post = growth.activate_employer_post(db, id, "owner")
+        if body.payment == "free":
+            post = growth.activate_employer_post(db, id, "complimentary")
+        else:
+            post = employers.record_hand_payment(db, id, body.payment)
     except ValueError as e:
         raise HTTPException(422, str(e))
     refresh_public()

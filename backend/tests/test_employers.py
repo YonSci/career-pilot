@@ -90,11 +90,11 @@ def test_employer_signs_in_by_link_pays_after_approval_and_sees_statistics(clien
     stats = next(p for p in client.get("/api/admin/overview").json()["employer_posts"] if p["id"] == post_id)
     assert stats["state"] == "live" and stats["stats"] == {"views": 1, "apply_clicks": 1, "matches": 1, "views_7d": 1, "apply_clicks_7d": 1}
     page = employer.get("/employers/dashboard").text
-    assert "members whose search matched it" in page and "member@example.org" not in page
+    assert "members reached by matching keywords" in page and "member@example.org" not in page
 
     # Paying again extends the period from its end, not from today.
     until = stats["featured_until"]
-    extended = client.post(f"/api/admin/employer-posts/{post_id}/activate").json()["featured_until"]
+    extended = client.post(f"/api/admin/employer-posts/{post_id}/activate", json={"payment": "free"}).json()["featured_until"]
     assert extended > until
 
 
@@ -168,3 +168,17 @@ def test_featured_listing_pays_through_chapa_and_returns_to_the_employer(client,
     assert back.headers["location"].endswith("/employers/dashboard?payment=paid")
     with Session() as db:
         assert employers.state(next(r.data for r in db.query(Record).filter_by(user_id=SYSTEM, key="employer_post:" + post_id))) == "live"
+
+
+def test_owner_features_a_listing_free_or_records_a_payment_by_hand(client, monkeypatch):
+    sent = mailbox(monkeypatch)
+    free, by_hand = submit(sent), submit(sent, title="Rangeland Ecologist")
+    for post_id in (free, by_hand):
+        client.put(f"/api/admin/employer-posts/{post_id}", json={"status": "approved"})
+    assert client.post(f"/api/admin/employer-posts/{free}/activate", json={"payment": "free"}).json()["featured_until"]
+    assert client.post(f"/api/admin/employer-posts/{by_hand}/activate", json={"payment": "ETB"}).json()["featured_until"]
+    r = client.get("/api/admin/business").json()
+    assert r["all_time"] == {"ETB": settings.featured_listing_etb, "USD": 0, "count": 1}
+    assert r["employers"]["paid"] == 1 and r["employers"]["featured_free"] == 1
+    payment = next(p for p in client.get("/api/admin/overview").json()["payments"] if p.get("post_id") == by_hand)
+    assert payment["provider"] == "manual" and payment["status"] == "paid" and payment["email"] == POST["contact_email"]

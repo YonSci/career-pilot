@@ -50,8 +50,12 @@ def _sum(items):
 def report(db):
     months = _months()
     this_month = months[-1]
-    payments = billing.payments(db)
+    # Test-mode orders (the owner trying the checkout) are not revenue. A refunded payment
+    # leaves revenue; refunds are shown on their own.
+    payments = [p for p in billing.payments(db) if not p.get("test_mode")]
     paid = [p for p in payments if p.get("status") == "paid"]
+    refunded = [p for p in payments if p.get("status") == "refunded"]
+    held = [p for p in payments if p.get("status") == "held"]
 
     revenue = [{"month": m, **_sum(p for p in paid if _month(p.get("paid_at")) == m)} for m in months]
     products = {
@@ -62,7 +66,7 @@ def report(db):
     checkouts = {}
     for provider in sorted({p.get("provider") or "?" for p in payments}):
         started = [p for p in payments if (p.get("provider") or "?") == provider]
-        done = sum(1 for p in started if p.get("status") == "paid")
+        done = sum(1 for p in started if p.get("status") in ("paid", "refunded"))
         checkouts[provider] = {"started": len(started), "paid": done}
     waiting = [p for p in payments if p.get("provider") == "manual" and p.get("status") == "requested"]
 
@@ -86,6 +90,7 @@ def report(db):
         wait = _days(post.get("moderated"), payment.get("paid_at")) if payment else None
         if wait is not None:
             to_payment.append(wait)
+    complimentary = sum(1 for p in posts if {"owner", "complimentary"} & set(p.get("payments", [])))
     stats = [employers.stats(db, p["id"]) for p in posts]
     views, clicks = sum(s["views"] for s in stats), sum(s["apply_clicks"] for s in stats)
 
@@ -100,6 +105,8 @@ def report(db):
         "products": products,
         "checkouts": checkouts,
         "awaiting_confirmation": {"count": len(waiting), **{c: sum(p["amount"] for p in waiting if p["currency"] == c) for c in ("ETB", "USD")}},
+        "refunds": {"count": len(refunded), **{c: sum(p.get("refunded_amount") or p["amount"] for p in refunded if p["currency"] == c) for c in ("ETB", "USD")}},
+        "held": [{"ref": p["ref"], "provider": p.get("provider"), "reason": p.get("held_reason")} for p in held],
         "members": {
             "accounts": len(users),
             "plans": dict(plans),
@@ -113,12 +120,14 @@ def report(db):
             "submitted": len(posts),
             "approved": sum(1 for p in posts if p.get("status") == "approved"),
             "paid": len(paid_posts & {p["id"] for p in posts}),
+            "featured_free": complimentary,
             "states": dict(states),
             "median_days_approval_to_payment": round(median(to_payment), 1) if to_payment else None,
             "views": views,
             "apply_clicks": clicks,
-            "matches": sum(s["matches"] for s in stats),
-            "click_through": round(clicks / views, 3) if views else None,
+            # Members whose keyword screening first accepted a featured listing: reach, not AI-confirmed matches.
+            "keyword_reach": sum(s["matches"] for s in stats),
+            "apply_per_100_views": site_stats.per_100(clicks, views),
         },
         "institutions": {
             "enquiries": len(enquiries),
@@ -151,22 +160,27 @@ def print_report(r):
     w = r["awaiting_confirmation"]
     if w["count"]:
         print(f"  Manual requests awaiting confirmation in the Cohort tab: {w['count']} ({_money(w)})")
+    if r["refunds"]["count"]:
+        print(f"  Refunded (not in revenue): {r['refunds']['count']} ({_money(r['refunds'])})")
+    for h in r["held"]:
+        print(f"  Held for review: {h['ref']} ({h['provider']}): {h['reason']}")
     m = r["members"]
     print(f"Members: {m['accounts']} accounts; plans " + ", ".join(f"{k} {v}" for k, v in sorted(m["plans"].items())))
     print(f"  paying now {_share(m['paying_now'], m['accounts'])}; ever paid {m['ever_paid']}; new payers this month {m['new_payers_this_month']}; "
           f"bought a plan more than once {m['repeat_payers']}; unused package credits {m['unused_credits']}")
     e = r["employers"]
-    print(f"Employers: submitted {e['submitted']} -> approved {e['approved']} -> paid {e['paid']}; now " + ", ".join(f"{k} {v}" for k, v in sorted(e["states"].items())))
+    print(f"Employers: submitted {e['submitted']} -> approved {e['approved']} -> paid {e['paid']}; featured free {e['featured_free']}; now " + ", ".join(f"{k} {v}" for k, v in sorted(e["states"].items())))
     if e["median_days_approval_to_payment"] is not None:
         print(f"  median days from approval to payment: {e['median_days_approval_to_payment']}")
-    ctr = f"{e['click_through']:.0%}" if e["click_through"] is not None else "n/a"
-    print(f"  featured listings: {e['views']} page views, {e['apply_clicks']} Apply clicks (click-through {ctr}), {e['matches']} member matches")
+    rate = lambda v: "n/a" if v is None else f"{v:g}"  # noqa: E731
+    print(f"  featured listings: {e['views']} page views, {e['apply_clicks']} Apply clicks ({rate(e['apply_per_100_views'])} per 100 views), "
+          f"{e['keyword_reach']} members reached by matching keywords")
     s = r["site"]
-    ctr = f"{s['job_page_click_through']:.0%}" if s["job_page_click_through"] is not None else "n/a"
     print(f"Public site, last {s['days']} days (people, not crawlers): {s['page_views']:,} page views, {s['search_arrivals']:,} from search engines")
     print("  views by page: " + (", ".join(f"{k} {v}" for k, v in s["views"].items()) or "none yet"))
     print("  search arrivals by page: " + (", ".join(f"{k} {v}" for k, v in s["search"].items()) or "none yet") + "; by engine: " + (", ".join(f"{k} {v}" for k, v in s["engines"].items()) or "none"))
-    print(f"  job pages: {sum(s['apply'].values())} Apply clicks, {sum(s['match'].values())} 'See how you match' clicks (click-through {ctr})")
+    print(f"  job pages: {sum(s['apply'].values())} Apply clicks ({rate(s['apply_per_100_job_views'])} per 100 views), "
+          f"{sum(s['match'].values())} 'See how you match' clicks ({rate(s['match_per_100_job_views'])} per 100 views); clicks, not unique visitors")
     i = r["institutions"]
     print(f"Institutions: {i['enquiries']} enquiries ({i['new']} new) asking for {i['seats_asked']} seats")
     print(f"AI usage the revenue covers (caps: {r['caps']['server_key_monthly_calls']:,} server-key calls, {r['caps']['jev_monthly_tokens']:,} JEV tokens a month):")

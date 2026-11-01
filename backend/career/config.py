@@ -146,6 +146,8 @@ class Settings(BaseSettings):
     lemon_checkout_pro: str = ""
     lemon_checkout_pro_plus: str = ""
     lemon_checkout_package: str = ""
+    # Its own link priced for five packages; without it, five packages in USD are a manual request.
+    lemon_checkout_package_5: str = ""
     # Lemon Squeezy checkout link for a featured employer listing (USD).
     lemon_checkout_featured: str = ""
     lemon_webhook_secret: str = ""

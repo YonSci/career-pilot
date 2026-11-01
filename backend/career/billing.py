@@ -2,7 +2,8 @@
 
 Three ways to pay, chosen by what is configured:
 - Chapa (Ethiopia, ETB): hosted checkout, verified server-side, webhook as backup.
-- Lemon Squeezy (cards worldwide, USD): hosted checkout links from the dashboard, webhook applies the purchase.
+- Lemon Squeezy (cards worldwide, USD): hosted checkout links from the dashboard, webhook applies the purchase
+  once the order's currency and amount match what was recorded at checkout; anything else is held for the owner.
 - Manual: when neither gateway is set, the member sends a payment request; the owner
   receives an email, collects the money (Telebirr, bank transfer) and activates the
   purchase in the Cohort tab.
@@ -35,6 +36,18 @@ PRODUCTS = {
 }
 
 
+def lemon_links():
+    """Lemon Squeezy checkout link per product. Each product needs its own priced link:
+    a product without one falls back to a manual payment request."""
+    return {
+        "pro": settings.lemon_checkout_pro,
+        "pro_plus": settings.lemon_checkout_pro_plus,
+        "package": settings.lemon_checkout_package,
+        "package_5": settings.lemon_checkout_package_5,
+        "featured_listing": settings.lemon_checkout_featured,
+    }
+
+
 def price(product, currency):
     etb = currency == "ETB"
     if product == "pro":
@@ -53,7 +66,7 @@ def price(product, currency):
 def gateways():
     return {
         "chapa": bool(settings.chapa_secret_key),
-        "lemon": bool(settings.lemon_checkout_pro or settings.lemon_checkout_pro_plus or settings.lemon_checkout_package or settings.lemon_checkout_featured),
+        "lemon": any(lemon_links().values()),
         "manual": True,
     }
 
@@ -113,7 +126,7 @@ def apply_purchase(db, ref, provider_ref=None):
     data = read(db, _payment_key(ref), user_id=SYSTEM)
     if not data:
         raise ValueError("Unknown payment reference.")
-    if data.get("status") == "paid":
+    if data.get("status") in ("paid", "refunded"):
         return data
     product = PRODUCTS[data["product"]]
     if product.get("listing"):
@@ -185,7 +198,7 @@ def start_checkout(db, user, product, currency, extra=None):
     if currency == "ETB" and settings.chapa_secret_key:
         return chapa_checkout(db, user, product, extra)
     if currency == "USD":
-        link = {"pro": settings.lemon_checkout_pro, "pro_plus": settings.lemon_checkout_pro_plus, "package": settings.lemon_checkout_package, "package_5": settings.lemon_checkout_package, "featured_listing": settings.lemon_checkout_featured}.get(product)
+        link = lemon_links().get(product)
         if link:
             payment = new_payment(db, user, product, "USD", "lemonsqueezy", extra)
             sep = "&" if "?" in link else "?"
@@ -253,14 +266,81 @@ def lemon_webhook(db, raw_body: bytes, signature: str):
     event = (payload.get("meta") or {}).get("event_name", "")
     custom = (payload.get("meta") or {}).get("custom_data") or {}
     attributes = (payload.get("data") or {}).get("attributes") or {}
-    if event not in ("order_created", "subscription_payment_success"):
+    order_id = str((payload.get("data") or {}).get("id"))
+    if event not in ("order_created", "subscription_payment_success", "order_refunded"):
         return {"ignored": event}
-    if event == "order_created" and attributes.get("status") not in (None, "paid"):
-        return {"ignored": "unpaid order"}
     ref = custom.get("ref")
     if not ref:
         raise ValueError("No payment reference in custom data.")
-    return apply_purchase(db, ref, provider_ref=str((payload.get("data") or {}).get("id")))
+    payment = read(db, _payment_key(ref), user_id=SYSTEM)
+    if not payment:
+        raise ValueError("Unknown payment reference.")
+    if event == "order_refunded":
+        return record_refund(db, ref, attributes, order_id)
+    if event == "order_created" and attributes.get("status") not in (None, "paid"):
+        return {"ignored": "unpaid order"}
+    problem = _lemon_mismatch(payment, attributes, custom)
+    if problem:
+        return hold(db, ref, problem, order_id)
+    if attributes.get("test_mode"):
+        payment = {**payment, "test_mode": True}
+        put(db, "payment", _payment_key(ref), payment, user_id=SYSTEM)
+    return apply_purchase(db, ref, provider_ref=order_id)
+
+
+def _lemon_mismatch(payment, attributes, custom):
+    """Why a Lemon Squeezy order does not pay for the recorded checkout, or None.
+
+    The checkout link fixes the product's price, so a paid total below the recorded
+    price means a different (cheaper) product or a tampered reference."""
+    if payment.get("status") == "paid":
+        return None
+    if payment.get("provider") != "lemonsqueezy":
+        return f"the reference belongs to a {payment.get('provider')} checkout"
+    if custom.get("user_id") and payment.get("user_id") and custom["user_id"] != payment["user_id"]:
+        return "the order names a different account"
+    currency = str(attributes.get("currency") or "").upper()
+    if currency != payment.get("currency"):
+        return f"paid in {currency or 'an unknown currency'}, expected {payment.get('currency')}"
+    try:
+        paid = int(attributes.get("total")) / 100
+    except (TypeError, ValueError):
+        return "the order carries no total"
+    if paid < float(payment["amount"]):
+        return f"paid {paid:g} {currency}, expected {payment['amount']} {currency}"
+    return None
+
+
+def hold(db, ref, reason, provider_ref=None):
+    """Keep a payment that does not match its checkout out of use; tell the owner."""
+    from .notifications import email_send
+
+    payment = {**read(db, _payment_key(ref), user_id=SYSTEM), "status": "held", "held_reason": reason, "held_at": now(), "provider_ref": provider_ref}
+    put(db, "payment", _payment_key(ref), payment, user_id=SYSTEM)
+    log.warning("Payment %s held: %s", ref, reason)
+    owner_email = settings.email_to or settings.email_from
+    if settings.smtp_host and settings.email_from and owner_email:
+        try:
+            email_send(
+                f"{settings.app_name}: payment {ref} held for review",
+                f"A {payment['provider']} payment for {PRODUCTS[payment['product']]['label']} ({payment['amount']} {payment['currency']}) was not applied: {reason}.\n\nCheck the order with the provider (order {provider_ref}). If it is genuine, mark it paid in the Cohort tab; otherwise refund it.",
+                to=owner_email,
+            )
+        except Exception as e:
+            log.warning("Held payment email failed: %s", type(e).__name__)
+    return {"held": reason, "ref": ref}
+
+
+def record_refund(db, ref, attributes, provider_ref=None):
+    """Mark a payment refunded. What it granted is left in place for the owner to decide."""
+    payment = read(db, _payment_key(ref), user_id=SYSTEM)
+    try:
+        amount = int(attributes.get("refunded_amount")) / 100
+    except (TypeError, ValueError):
+        amount = payment.get("amount")
+    payment = {**payment, "status": "refunded", "refunded_at": now(), "refunded_amount": amount, "refund_ref": provider_ref}
+    put(db, "payment", _payment_key(ref), payment, user_id=SYSTEM)
+    return payment
 
 
 def manual_request(db, user, product, currency, extra=None):

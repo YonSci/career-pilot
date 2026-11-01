@@ -75,7 +75,7 @@ def test_job_page_has_one_job_posting_and_measures_clicks(client):
 
     site = client.get("/api/admin/business").json()["site"]
     assert site["views"] == {"job": 1, "place": 1} and site["search"] == {"job": 1} and site["engines"] == {"google": 1}
-    assert site["apply"] == {"job": 1} and site["match"] == {"job": 1} and site["job_page_click_through"] == 2.0
+    assert site["apply"] == {"job": 1} and site["match"] == {"job": 1} and site["apply_per_100_job_views"] == 100.0 and site["match_per_100_job_views"] == 100.0
 
 
 def test_business_report_prints_site_section(client, capsys):

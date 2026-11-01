@@ -64,11 +64,16 @@ def summary(db, days=30):
         for k in totals:
             totals[k].update(data.get(k, {}))
     job_views = totals["views"]["job"]
-    clicks = sum(totals["apply"].values()) + sum(totals["match"].values())
     return {
         "days": days,
         **{k: dict(v.most_common()) for k, v in totals.items()},
         "page_views": sum(totals["views"].values()),
         "search_arrivals": sum(totals["search"].values()),
-        "job_page_click_through": round(clicks / job_views, 3) if job_views else None,
+        # Clicks per 100 job-page views: event rates, not unique visitors. One visitor can click several times.
+        "apply_per_100_job_views": per_100(totals["apply"]["job"], job_views),
+        "match_per_100_job_views": per_100(totals["match"]["job"], job_views),
     }
+
+
+def per_100(events, views):
+    return round(100 * events / views, 1) if views else None

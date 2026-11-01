@@ -4,7 +4,7 @@ A personal job discovery and application assistant for data science, AI, geospat
 
 It collects postings from a shared catalog of public sources and from sources you add, screens them against your keywords, optionally pre-ranks them with JEV, asks an AI to explain requirement by requirement how each posting matches your **verified** CV evidence, alerts you (Telegram, email, in-app inbox), and, only when you click **Prepare application**, drafts a tailored CV, cover letter and screening answers grounded in that evidence for you to review, edit and export.
 
-It never submits anything, never contacts employers, and never invents facts about you.
+It never submits anything, never contacts employers on your behalf, and never invents facts about you. (Employers who buy a featured listing are emailed about their own listing.)
 
 Version 0.4 serves many people on one server: each account has a private workspace, uses AI included in a sponsored seat or its own OpenAI key, connects its own mailbox for email alerts, and links its own Telegram chat in one tap. During the beta, a limited number of people can join each day without a code; others request an invitation. The first account created becomes the owner and gets the Cohort tab (invitations, plans, shared sources, activation metrics, the blind JEV benchmark). See `docs/DEPLOYMENT.md` for the Render deployment and `docs/CATALOG_DESIGN.md` for the shared catalog.
 
@@ -103,7 +103,7 @@ Provider acceptance is not delivery confirmation. An alert is recorded before se
 - `INVITE_ONLY=true` (default): new accounts need a code from the Cohort tab, except that up to `OPEN_SEATS_PER_DAY` (default 25) people a day can join without one. Set `INVITE_ONLY=false` to open sign-up.
 - `SECRET_KEY` encrypts stored API keys and mailbox passwords (defaults to `APP_TOKEN`). Changing it invalidates them.
 - Plans (`backend/career/auth.py`): Free, Beta (own OpenAI key), Beta with AI included (the first `SPONSORED_SEATS` members, on the server's key within `SERVER_KEY_MONTHLY_CALLS`), Pro and Pro Plus. The owner can change plans and sponsor seats in the Cohort tab.
-- Payments (`backend/career/billing.py`): Chapa (ETB), Lemon Squeezy (cards, USD) or, when neither is configured, a manual request the owner confirms in the Cohort tab. Employers submit a vacancy for a featured listing; after the owner approves it, they pay and follow its views, Apply clicks and matching members at `/employers`, signing in with an emailed link.
+- Payments (`backend/career/billing.py`): Chapa (ETB), Lemon Squeezy (cards, USD) or, when neither is configured, a manual request the owner confirms in the Cohort tab. Employers submit a vacancy for a featured listing; after the owner approves it, they pay and follow its views, Apply clicks and the members reached by matching keywords at `/employers`, signing in with an emailed link.
 - Scripts can still call the API with `Authorization: Bearer <APP_TOKEN>`; that acts as the owner.
 
 ## AI
