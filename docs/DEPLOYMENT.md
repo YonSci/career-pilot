@@ -6,7 +6,7 @@ Version 0.3 is multi-user. Each account has its own evidence, sources, postings,
 
 1. **Repository.** Push this project to a private GitHub repository. `render.yaml` at the root is a Blueprint that defines the service, its disk and its environment variables.
 2. **Render.** Create an account at render.com, choose **New → Blueprint**, pick the repository. Render reads `render.yaml`. Fill the variables marked `sync: false`:
-   - `PUBLIC_URL` and `CORS_ORIGINS`: `https://<service-name>.onrender.com` (or your custom domain once attached).
+   - `PUBLIC_URL` and `CORS_ORIGINS`: `https://<service-name>.onrender.com` (or your custom domain once attached). With a custom domain in `PUBLIC_URL`, pages opened at the `onrender.com` address redirect there permanently (301); `/api/`, payment webhooks and `/health` keep answering at both.
    - `OPENAI_API_KEY`: your key. It is used only by the owner account; members must add their own.
    - `TELEGRAM_BOT_TOKEN`: the beta bot's token (create a second bot in BotFather so your personal instance keeps its own).
    - `RELIEFWEB_APPNAME`: your appname (shared by all accounts; ReliefWeb's terms allow one application).

@@ -103,3 +103,23 @@ def test_every_public_page_has_a_description_search_engines_accept(client, monke
         for kind in ('name="description"', 'property="og:description"'):
             content = re.search(r"<meta " + kind + r' content="([^"]*)"', page).group(1)
             assert 25 <= len(content) <= 160, (path, kind, len(content))
+
+
+def test_render_address_moves_to_the_custom_domain(client, monkeypatch):
+    import pathlib
+    from career.config import settings
+    from career import main as m
+
+    monkeypatch.setattr(settings, "public_url", "https://jobsfindai.com")
+    old = TestClient(app, headers={**BROWSER, "host": "jobs-find-ai.onrender.com"})
+    r = old.get("/jobs/in/kenya?page=2", follow_redirects=False)
+    assert r.status_code == 301 and r.headers["location"] == "https://jobsfindai.com/jobs/in/kenya?page=2"
+    # The API, webhooks and the health check still answer at the old address.
+    assert old.get("/health").status_code == 200 and old.get("/api/public/jobs").status_code == 200
+    assert old.post("/api/billing/webhook/lemonsqueezy", content=b"{}").status_code != 301
+    # The landing page names the configured address.
+    monkeypatch.setattr(settings, "landing_dir", pathlib.Path(__file__).resolve().parents[2] / "landing")
+    m._landing_cache.update(at=0.0, html=None)
+    page = TestClient(app, headers=BROWSER).get("/").text
+    assert '<link rel="canonical" href="https://jobsfindai.com/" />' in page and "onrender.com" not in page
+    m._landing_cache.update(at=0.0, html=None)

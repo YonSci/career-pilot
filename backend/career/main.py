@@ -94,6 +94,26 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def own_domain(request: Request, call_next):
+    """Once PUBLIC_URL is a custom domain, pages opened at the Render address move there
+    permanently, so search engines and shared links settle on one address. API calls,
+    payment webhooks and the health check keep answering at both addresses."""
+    target = urlparse(settings.public_url)
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    if (
+        request.method in ("GET", "HEAD")
+        and host.endswith(".onrender.com")
+        and target.hostname
+        and not target.hostname.endswith(".onrender.com")
+        and not request.url.path.startswith("/api/")
+        and request.url.path != "/health"
+    ):
+        query = ("?" + request.url.query) if request.url.query else ""
+        return RedirectResponse(f"{target.scheme}://{target.netloc}{request.url.path}{query}", status_code=301)
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def private_responses(request: Request, call_next):
     response = await call_next(request)
     if request.url.path.startswith("/api/"):
@@ -784,6 +804,8 @@ def landing_page(request: Request, db=Depends(db_session)):
         page = page.replace("<!--CHANNEL-->", f'<a class="btn btn-ghost" href="{channel_url}" target="_blank" rel="noopener" data-track="channel_link_clicked">Daily roles on Telegram</a>', 1)
         page = page.replace("<!--CHANNEL-FOOT-->", f'<a href="{channel_url}" target="_blank" rel="noopener" data-track="channel_link_clicked">Telegram channel</a>', 1)
         page = page.replace("<!--CHANNEL-BANNER-->", public_site.channel_banner(), 1)
+    # The page names its own address for link previews; serve it at the configured one.
+    page = page.replace("https://jobs-find-ai.onrender.com", settings.public_url.rstrip("/"))
     page = page.replace("<!--JOBS-->", public_jobs.render_cards(data["latest"]), 1)
     page = page.replace("<!--JOBS-JSONLD-->", public_jobs.json_ld(data["latest"], settings.public_url.rstrip("/") + "/#jobs"), 1)
     quotes = growth.testimonials(db)
