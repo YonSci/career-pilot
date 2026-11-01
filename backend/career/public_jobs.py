@@ -365,12 +365,15 @@ def sector_page(data, slug=None):
     for s2, (label, _) in SECTORS.items():
         chips += ' <a href="/jobs/%s" class="%s">%s (%d)</a>' % (s2, "on" if s2 == slug else "", html.escape(label.split(" jobs")[0]), data["sectors"].get(s2, 0))
     head_title = f"{title} · {settings.app_name}"
+    from .public_site import meta_description
+
+    short = meta_description(description)
     description = f"{len(jobs)} open {title.lower()}, collected from ReliefWeb and employer boards and refreshed every ten minutes. Get every posting scored against your verified CV."
     return (
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-        f"<title>{html.escape(head_title)}</title><meta name=\"description\" content=\"{html.escape(description)}\">"
+        f"<title>{html.escape(head_title)}</title><meta name=\"description\" content=\"{html.escape(short)}\">"
         f"<link rel=\"canonical\" href=\"{site}/jobs{'/' + slug if slug else ''}\"><link rel=\"icon\" href=\"/favicon.svg\" type=\"image/svg+xml\">"
-        f"<meta property=\"og:title\" content=\"{html.escape(head_title)}\"><meta property=\"og:description\" content=\"{html.escape(description)}\"><meta property=\"og:image\" content=\"{site}/social-card.png\">"
+        f"<meta property=\"og:title\" content=\"{html.escape(head_title)}\"><meta property=\"og:description\" content=\"{html.escape(short)}\"><meta property=\"og:image\" content=\"{site}/social-card.png\">"
         f"<style>{PAGE_CSS}</style>{json_ld(jobs[:25], site + '/jobs' + ('/' + slug if slug else ''))}</head><body><div class=\"wrap\">"
         f"<nav class=\"nav\"><a href=\"/\">{html.escape(settings.app_name)}</a><a class=\"btn\" href=\"/#invite\">Get matched</a></nav>"
         f"<h1>{html.escape(title)}</h1><p class=\"lead\">{html.escape(description)}</p><div class=\"sectors\">{chips}</div>"

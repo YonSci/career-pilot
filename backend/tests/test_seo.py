@@ -84,3 +84,22 @@ def test_business_report_prints_site_section(client, capsys):
     business_report.main()
     out = capsys.readouterr().out
     assert "Public site, last 30 days (people, not crawlers): 1 page views, 1 from search engines" in out and "by engine: google 1" in out
+
+
+def test_every_public_page_has_a_description_search_engines_accept(client, monkeypatch):
+    """Bing flags meta descriptions outside 25-160 characters."""
+    import pathlib
+    from career.config import settings
+    from career import main as m
+
+    seed_places(client)
+    monkeypatch.setattr(settings, "landing_dir", pathlib.Path(__file__).resolve().parents[2] / "landing")
+    m._landing_cache.update(at=0.0, html=None)
+    anon = TestClient(app, headers=BROWSER)
+    slug = anon.get("/api/public/jobs").json()["latest"][0]["slug"]
+    org = anon.get("/organisations").text.split('href="/organisations/')[1].split('"')[0]
+    for path in ("/", "/jobs", "/jobs/climate", "/jobs/in/ethiopia", "/jobs/climate/in/ethiopia", "/jobs/in/remote", "/job/" + slug, "/organisations", "/organisations/" + org, "/guide"):
+        page = anon.get(path).text
+        for kind in ('name="description"', 'property="og:description"'):
+            content = re.search(r"<meta " + kind + r' content="([^"]*)"', page).group(1)
+            assert 25 <= len(content) <= 160, (path, kind, len(content))

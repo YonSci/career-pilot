@@ -63,7 +63,16 @@ def channel_banner():
     )
 
 
+def meta_description(text, limit=155):
+    """A description within search engines' length limits, cut at a word."""
+    text = " ".join(str(text or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rsplit(" ", 1)[0].rstrip(",.;:") + "…"
+
+
 def shell(title, description, body, path, extra_head="", image=None):
+    description = meta_description(description)
     nav_links = ' <a href="/jobs">Jobs</a> <a href="/organisations">Employers</a> <a href="/guide">Guide</a>'
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
